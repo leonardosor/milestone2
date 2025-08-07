@@ -1,9 +1,10 @@
-# Multi-API ETL System for Census and Urban Institute Data
+# Modular ETL System for Census and Urban Institute Data
 
-This project provides a comprehensive ETL system that can pull data from multiple APIs and save it into a PostgreSQL database on AWS. It supports both US Census Bureau and Urban Institute APIs with async processing for optimal performance.
+This project provides a comprehensive, modular ETL system that can pull data from multiple APIs and save it into a PostgreSQL database. It supports both US Census Bureau and Urban Institute APIs with async processing for optimal performance.
 
 ## Features
 
+- **Modular Design**: Separate components for different data sources
 - **Multi-API Support**: Pull data from Census Bureau and Urban Institute APIs
 - **Async Processing**: High-performance concurrent API calls
 - **AWS Integration**: Support for AWS RDS PostgreSQL and AWS Secrets Manager
@@ -12,6 +13,23 @@ This project provides a comprehensive ETL system that can pull data from multipl
 - **Database Schema**: Optimized tables with proper indexes
 - **Backup Files**: Automatic CSV backup generation
 - **Configurable Data Sources**: Easy to add new API sources
+- **QA Mode**: Built-in debugging and testing capabilities
+
+## Project Structure
+
+```
+├── main.py                          # Main modular ETL controller
+├── census_to_postgresql_async.py    # Census ETL component
+├── urban_to_postgresql_async.py     # Urban Institute ETL component
+├── run_etl.py                       # ETL runner script with various options
+├── debug_etl.py                     # Debug script for testing
+├── config.json                      # Configuration file
+├── requirements.txt                  # Python dependencies
+├── README.md                        # This file
+├── main_etl.log                     # Main ETL execution log
+├── multi_api_etl.log               # Multi-API ETL execution log
+└── .gitignore                       # Git ignore file
+```
 
 ## Supported APIs
 
@@ -22,10 +40,10 @@ This project provides a comprehensive ETL system that can pull data from multipl
 - **Geography**: ZIP code tabulation areas
 
 ### 2. Urban Institute API
-- **Source**: https://api.urban.org
-- **Data**: Education, housing, health, crime statistics
-- **Endpoints**: Schools, districts, students, housing, health, crime
-- **Authentication**: API key required
+- **Source**: https://educationdata.urban.org
+- **Data**: Education statistics and school information
+- **Endpoints**: Schools directory, enrollment data, student demographics
+- **Authentication**: No API key required (public API)
 
 ## Prerequisites
 
@@ -71,20 +89,7 @@ This project provides a comprehensive ETL system that can pull data from multipl
 
 ### Database Setup
 
-The system supports both local PostgreSQL and AWS RDS databases. You can easily switch between them using the provided utility script.
-
-#### Switching Database Types
-
-```bash
-# Switch to local database
-python switch_database.py local
-
-# Switch to AWS RDS
-python switch_database.py aws
-
-# Check current configuration
-python switch_database.py status
-```
+The system supports both local PostgreSQL and AWS RDS databases. Database configuration is handled through the `config.json` file.
 
 #### Local Database Setup
 
@@ -92,10 +97,10 @@ python switch_database.py status
    ```bash
    # Ubuntu/Debian
    sudo apt-get install postgresql postgresql-contrib
-   
+
    # macOS
    brew install postgresql
-   
+
    # Windows
    # Download from https://www.postgresql.org/download/windows/
    ```
@@ -123,10 +128,7 @@ python switch_database.py status
 
 #### AWS RDS Setup
 
-1. **Deploy RDS instance using CloudFormation**
-   ```bash
-   ./deploy.sh
-   ```
+1. **Set up AWS RDS instance manually or using AWS Console**
 
 2. **Configure AWS database in config.json**
    ```json
@@ -221,41 +223,77 @@ python switch_database.py status
 ### Basic Usage
 
 ```bash
-python multi_api_etl.py
+# Run multi-source ETL (Census + Urban Institute)
+python main.py
+
+# Run only Census ETL
+python main.py --census-only
+
+# Run only Urban Institute ETL
+python main.py --urban-only
+
+# Run with custom Census years
+python main.py --census-begin-year 2015 --census-end-year 2019
+
+# Show ETL component status
+python main.py --status
+```
+
+### Using the ETL Runner Script
+
+```bash
+# Run multi-source ETL with config years
+python run_etl.py
+
+# Run only Census ETL
+python run_etl.py --census-only
+
+# Run only Urban Institute ETL
+python run_etl.py --urban-only
+
+# Run with custom years
+python run_etl.py --years 2015 2019
+
+# Show configuration
+python run_etl.py --show-config
+
+# Show ETL status
+python run_etl.py --status
+
+# Run in QA mode with breakpoints
+python run_etl.py --qa-mode
 ```
 
 ### Programmatic Usage
 
 ```python
-from multi_api_etl import MultiAPIDataETL
+from main import ModularETLController
 import asyncio
 
 async def main():
-    # Initialize ETL process
-    etl = MultiAPIDataETL('config.json')
-    
-    # Define Urban Institute endpoints
-    urban_endpoints = [
-        {
-            'endpoint': '/v1/education/schools',
-            'parameters': {'limit': 1000},
-            'year': 2023
-        },
-        {
-            'endpoint': '/v1/education/districts',
-            'parameters': {'limit': 1000},
-            'year': 2023
-        }
-    ]
-    
-    # Run ETL process
-    await etl.run_etl_async(
-        census_years=(2015, 2019),
-        urban_endpoints=urban_endpoints
-    )
+    # Initialize ETL controller
+    etl_controller = ModularETLController('config.json')
+
+    # Run multi-source ETL
+    await etl_controller.run_multi_source_etl()
+
+    # Or run individual components
+    await etl_controller.run_census_etl(2015, 2019)
+    await etl_controller.run_urban_etl()
+
+    # Check component status
+    status = etl_controller.get_etl_status()
+    print(f"ETL Status: {status}")
 
 # Run the ETL process
 asyncio.run(main())
+```
+
+### Debug Mode
+
+```bash
+# Run debug script for step-by-step testing
+python debug_etl.py
 ```
 
 ### Custom Urban Institute Endpoints
@@ -264,21 +302,24 @@ asyncio.run(main())
 # Example of fetching different Urban Institute data
 urban_endpoints = [
     {
-        'endpoint': '/v1/education/schools',
-        'parameters': {'state': 'CA', 'limit': 500},
+        'endpoint': '/api/v1/schools/ccd/directory',
+        'parameters': {'limit': 1000},
         'year': 2023
     },
     {
-        'endpoint': '/v1/housing',
-        'parameters': {'city': 'Los Angeles', 'limit': 1000},
+        'endpoint': '/api/v1/schools/ccd/enrollment',
+        'parameters': {'limit': 1000},
         'year': 2023
     },
     {
-        'endpoint': '/v1/health',
-        'parameters': {'county': 'Los Angeles', 'limit': 500},
+        'endpoint': '/api/v1/schools/crdc/enrollment',
+        'parameters': {'limit': 1000},
         'year': 2023
     }
 ]
+
+# Use with main.py
+python main.py --urban-endpoints /api/v1/schools/ccd/directory /api/v1/schools/ccd/enrollment
 ```
 
 ## Database Schema
@@ -367,11 +408,11 @@ class NewAPIDataSource(DataSource):
     def __init__(self, config):
         self.config = config
         # Initialize your API client
-    
+
     async def fetch_data(self, request):
         # Implement your API call logic
         pass
-    
+
     def process_data(self, data):
         # Implement your data processing logic
         pass
@@ -461,4 +502,4 @@ For issues and questions:
 1. Check the troubleshooting section
 2. Review the log files
 3. Verify API keys and endpoints
-4. Create an issue with detailed error information 
+4. Create an issue with detailed error information

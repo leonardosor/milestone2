@@ -38,9 +38,8 @@
     "urban": {
         "base_url": "https://educationdata.urban.org",
         "endpoints": {
-            "schools_directory": "/api/v1/schools/ccd/directory",
-            "education_districts": "/api/v1/schools/ccd/enrollment",
-            "education_students": "/api/v1/schools/crdc/enrollment"
+            "schools_directory": "/api/v1/schools/ccd/directory/{year}",
+            "education_students": "/api/v1/schools/ccd/enrollment/{year}/grade-12"
         }
     },
     "etl": {
