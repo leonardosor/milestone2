@@ -21,8 +21,6 @@ import logging
 import pandas as pd
 import boto3
 from sqlalchemy import create_engine, text
-import json
-from datetime import datetime
 import asyncio
 import aiohttp
 from concurrent.futures import ThreadPoolExecutor
@@ -30,6 +28,9 @@ from typing import List, Dict, Any, Optional
 import backoff
 from dataclasses import dataclass
 from pandas import Timestamp
+import numpy as np
+import json
+from datetime import datetime
 
 # Configure logging
 logging.basicConfig(
@@ -41,32 +42,6 @@ logging.basicConfig(
     ],
 )
 logger = logging.getLogger(__name__)
-
-
-class TimestampEncoder(json.JSONEncoder):
-    """Custom JSON encoder to handle pandas Timestamp objects and NaN values"""
-
-    def default(self, obj):
-        if isinstance(obj, Timestamp):
-            return obj.isoformat()
-        elif pd.isna(obj) or (isinstance(obj, float) and str(obj) == "nan"):
-            return None
-        return super().default(obj)
-
-    def encode(self, obj):
-        """Override encode to handle NaN values in strings"""
-        if isinstance(obj, dict):
-            # Clean NaN values from dictionary
-            cleaned_obj = {}
-            for key, value in obj.items():
-                if pd.isna(value) or (isinstance(value, float) and str(value) == "nan"):
-                    cleaned_obj[key] = None
-                elif isinstance(value, str) and value.lower() == "nan":
-                    cleaned_obj[key] = None
-                else:
-                    cleaned_obj[key] = value
-            return super().encode(cleaned_obj)
-        return super().encode(obj)
 
 
 @dataclass
@@ -124,14 +99,16 @@ class AsyncUrbanDataETL:
                 "urban": {
                     "base_url": "https://educationdata.urban.org",
                     "endpoints": {
-                        "schools_directory": "/api/v1/schools/ccd/directory/{year}",
+                        "schools_directory": "/api/v1/schools/crdc/directory/{year}",
                         "education_students": "/api/v1/schools/crdc/enrollment/{year}/grade-12",
+                        "test_participation": "/api/v1/schools/crdc/sat-act-participation/{year}/race/sex/",
+
                     },
                 },
                 "use_aws_secrets": False,
                 "max_concurrent_requests": 5,
                 "batch_delay": 2,
-                "db_batch_size": 1000,
+                "db_batch_size": 100,
                 "async": {
                     "connection_pool_size": 10,
                     "max_overflow": 20,
@@ -308,13 +285,13 @@ class AsyncUrbanDataETL:
     @backoff.on_exception(
         backoff.expo,
         (aiohttp.ClientError, asyncio.TimeoutError),
-        max_tries=3,
-        max_time=300,
+        max_tries=5,  # Increased retries for server errors
+        max_time=600,  # Increased max time to 10 minutes
     )
     async def _make_urban_request(
         self, request: UrbanRequest
     ) -> Optional[pd.DataFrame]:
-        """Make async request to Urban Institute API with rate limiting"""
+        """Make async request to Urban Institute API with rate limiting and pagination"""
         async with self.semaphore:
             try:
                 # Build URL with year parameter if specified
@@ -323,69 +300,278 @@ class AsyncUrbanDataETL:
                     endpoint = endpoint.format(year=request.year)
 
                 url = f"{self.base_url}{endpoint}"
-
                 logger.info(f"Making Urban Institute request to: {url}")
 
-                async with self.session.get(url, params=request.parameters) as response:
-                    if response.status == 200:
-                        data = await response.json()
+                # Initialize variables for pagination
+                all_data = []
+                page = 1
+                
+                # Get pagination settings from config
+                pagination_config = self.config.get("urban", {}).get("pagination", {})
+                page_delay_ms = pagination_config.get("page_delay_ms", 500)
+                max_pages = pagination_config.get("max_pages_per_endpoint", 100)
+                
+                total_records = None
+                has_more_pages = True
 
-                        # Convert to DataFrame
-                        if isinstance(data, list):
-                            df = pd.DataFrame(data)
-                        elif isinstance(data, dict):
-                            # Handle paginated response format
-                            if "results" in data:
-                                df = pd.DataFrame(data["results"])
-                            elif "data" in data:
-                                df = pd.DataFrame(data["data"])
+                while has_more_pages:
+                    # Use the current URL (either original or next URL from previous response)
+                    current_url = url
+                    
+                    logger.info(f"Fetching page {page} from: {current_url}")
+
+                    async with self.session.get(current_url, params=request.parameters) as response:
+                        if response.status == 200:
+                            data = await response.json()
+
+                            # Extract data and pagination info
+                            current_df = None
+                            if isinstance(data, list):
+                                current_df = pd.DataFrame(data)
+                                # If it's a list, assume no pagination or single page
+                                has_more_pages = False
+                            elif isinstance(data, dict):
+                                # Handle paginated response format
+                                if "results" in data:
+                                    current_df = pd.DataFrame(data["results"])
+                                    # Check for pagination metadata
+                                    if "count" in data:
+                                        total_records = data["count"]
+                                    # Use the 'next' URL for pagination
+                                    if "next" in data and data["next"]:
+                                        url = data["next"]  # Update URL for next iteration
+                                        has_more_pages = True
+                                    else:
+                                        has_more_pages = False
+                                elif "data" in data:
+                                    current_df = pd.DataFrame(data["data"])
+                                    # Check for pagination metadata
+                                    if "total" in data:
+                                        total_records = data["total"]
+                                    # Use the 'next' URL for pagination
+                                    if "next" in data and data["next"]:
+                                        url = data["next"]  # Update URL for next iteration
+                                        has_more_pages = True
+                                    else:
+                                        has_more_pages = False
+                                else:
+                                    # If no results/data key, try to use the dict itself
+                                    current_df = pd.DataFrame([data])
+                                    has_more_pages = False
                             else:
-                                # If no results/data key, try to use the dict itself
-                                df = pd.DataFrame([data])
+                                current_df = pd.DataFrame([data])
+                                has_more_pages = False
+
+                            # Add current page data to collection
+                            if current_df is not None and not current_df.empty:
+                                all_data.append(current_df)
+                                logger.info(f"Page {page}: Retrieved {len(current_df)} records")
+                                
+                                # Check if we've reached the total
+                                if total_records is not None:
+                                    total_records_fetched = sum(len(df) for df in all_data)
+                                    if total_records_fetched >= total_records:
+                                        has_more_pages = False
+                            else:
+                                logger.warning(f"Page {page}: No data returned")
+                                has_more_pages = False
+
+                            page += 1
+
+                            # Check if we've exceeded max pages
+                            if page > max_pages:
+                                logger.warning(f"Reached maximum pages limit ({max_pages}) for {request.endpoint}")
+                                has_more_pages = False
+                                break
+
+                            # Add delay between pages to be respectful to the API
+                            if has_more_pages:
+                                await asyncio.sleep(page_delay_ms / 1000)  # Convert ms to seconds
+
                         else:
-                            df = pd.DataFrame([data])
-
-                        if not df.empty:
-                            df["data_source"] = "urban_institute"
-                            df["endpoint"] = request.endpoint
-                            df["year"] = (
-                                request.year if request.year else datetime.now().year
-                            )
-                            df["fetched_at"] = datetime.now()
-
-                            logger.info(
-                                f"Successfully fetched {len(df)} records from {request.endpoint}"
-                            )
-                            return df
-                        else:
-                            logger.warning(f"No data returned from {request.endpoint}")
-                            return None
-                    else:
-                        error_text = await response.text()
-                        logger.error(
-                            f"Urban Institute API error: {response.status} - {error_text}"
-                        )
-
-                        # Provide more specific error messages
-                        if response.status == 404:
-                            logger.error(f"Endpoint not found: {url}")
-                            logger.error("Please check if the endpoint URL is correct")
-                        elif response.status == 403:
-                            logger.error("Access forbidden - API key may be required")
-                        elif response.status == 429:
+                            error_text = await response.text()
                             logger.error(
-                                "Rate limit exceeded - consider reducing request frequency"
+                                f"Urban Institute API error on page {page}: {response.status} - {error_text}"
                             )
-                        else:
-                            logger.error(f"Unexpected HTTP status: {response.status}")
 
-                        return None
+                            # Provide more specific error messages
+                            if response.status == 404:
+                                logger.error(f"Endpoint not found: {url}")
+                                logger.error("Please check if the endpoint URL is correct")
+                            elif response.status == 403:
+                                logger.error("Access forbidden - API key may be required")
+                            elif response.status == 429:
+                                logger.error(
+                                    "Rate limit exceeded - consider reducing request frequency"
+                                )
+                                # Wait longer for rate limit
+                                if pagination_config.get("retry_on_rate_limit", True):
+                                    retry_delay = page_delay_ms * 4 / 1000  # 4x the normal delay
+                                    logger.info(f"Waiting {retry_delay}s before retrying...")
+                                    await asyncio.sleep(retry_delay)
+                                    continue
+                                else:
+                                    logger.error("Rate limit exceeded and retry is disabled")
+                                    return None
+                            elif response.status == 500:
+                                logger.error(f"Urban Institute server error (500) for {url}")
+                                logger.error("This is a server-side issue. Consider:")
+                                logger.error("1. Retrying the request later")
+                                logger.error("2. Using a different year if available")
+                                logger.error("3. Checking Urban Institute API status")
+                            elif response.status == 502 or response.status == 503:
+                                logger.error(f"Urban Institute service temporarily unavailable ({response.status})")
+                                logger.error("Service may be under maintenance or overloaded")
+                            else:
+                                logger.error(f"Unexpected HTTP status: {response.status}")
+
+                            return None
+
+                # Combine all pages into a single DataFrame
+                if all_data:
+                    consolidated_df = pd.concat(all_data, ignore_index=True)
+                    consolidated_df.reset_index(drop=True, inplace=True)
+
+                    # Add metadata columns
+                    consolidated_df["data_source"] = "urban_institute"
+                    consolidated_df["endpoint"] = request.endpoint
+                    consolidated_df["year"] = (
+                        request.year if request.year else datetime.now().year
+                    )
+                    consolidated_df["fetched_at"] = datetime.now()
+
+                    total_pages = page - 1
+                    total_records_fetched = len(consolidated_df)
+                    
+                    logger.info(
+                        f"Successfully fetched {total_records_fetched} total records from {request.endpoint} across {total_pages} pages"
+                    )
+                    
+                    # Log pagination summary
+                    if total_pages > 1:
+                        avg_records_per_page = total_records_fetched / total_pages
+                        logger.info(f"Pagination summary: {avg_records_per_page:.1f} records per page on average")
+                        
+                        if total_records is not None:
+                            coverage = (total_records_fetched / total_records) * 100
+                            logger.info(f"Data coverage: {coverage:.1f}% of total available records")
+                    
+                    return consolidated_df
+                else:
+                    logger.warning(f"No data returned from {request.endpoint}")
+                    return None
 
             except Exception as e:
                 logger.error(
                     f"Failed to make Urban Institute request to {request.endpoint}: {e}"
                 )
                 return None
+
+    async def _check_year_availability(self, year: int) -> bool:
+        """Check if a specific year is available by testing a simple endpoint"""
+        try:
+            test_endpoint = "/api/v1/schools/ccd/directory/{year}"
+            test_url = f"{self.base_url}{test_endpoint.format(year=year)}"
+            
+            async with self.session.get(test_url, params={"limit": 1}) as response:
+                return response.status == 200
+        except Exception:
+            return False
+
+    async def _get_endpoint_metadata(self, endpoint: str, year: int = None) -> Dict[str, Any]:
+        """Get metadata about an endpoint including total record count and pagination info"""
+        try:
+            # Build URL with year parameter if specified
+            if year and "{year}" in endpoint:
+                endpoint_url = endpoint.format(year=year)
+            else:
+                endpoint_url = endpoint
+
+            url = f"{self.base_url}{endpoint_url}"
+            
+            # Make a minimal request to get metadata
+            async with self.session.get(url, params={"limit": 1, "offset": 0}) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    
+                    metadata = {
+                        "endpoint": endpoint,
+                        "year": year,
+                        "url": url,
+                        "status": "available"
+                    }
+                    
+                    # Extract pagination info
+                    if isinstance(data, dict):
+                        if "count" in data:
+                            metadata["total_records"] = data["count"]
+                        elif "total" in data:
+                            metadata["total_records"] = data["total"]
+                        
+                        if "next" in data:
+                            metadata["has_pagination"] = bool(data["next"])
+                        elif "page" in data and "pages" in data:
+                            metadata["has_pagination"] = data["pages"] > 1
+                            metadata["total_pages"] = data["pages"]
+                    
+                    logger.info(f"Endpoint metadata: {metadata}")
+                    return metadata
+                else:
+                    return {
+                        "endpoint": endpoint,
+                        "year": year,
+                        "url": url,
+                        "status": "unavailable",
+                        "http_status": response.status
+                    }
+                    
+        except Exception as e:
+            logger.error(f"Failed to get metadata for endpoint {endpoint}: {e}")
+            return {
+                "endpoint": endpoint,
+                "year": year,
+                "status": "error",
+                "error": str(e)
+            }
+
+    def _get_endpoints_for_year(self, year: int) -> List[Dict[str, Any]]:
+        """Get endpoints from config for a specific year"""
+        urban_config = self.config.get("urban", {})
+        endpoints_config = urban_config.get("endpoints", {})
+        
+        # Get all endpoints from config dynamically
+        all_endpoints = []
+        
+        for endpoint_key, endpoint_path in endpoints_config.items():
+            all_endpoints.append({
+                "endpoint": endpoint_path,
+                "parameters": {},  # Let the API handle pagination with its default settings
+                "year": year,
+            })
+        
+        return all_endpoints
+
+    def _get_all_endpoints_for_years(self, begin_year: int, end_year: int) -> List[Dict[str, Any]]:
+        """Get all endpoints for all years in the range"""
+        all_endpoints = []
+        years_list = list(range(begin_year, end_year + 1))
+        
+        for year in years_list:
+            year_endpoints = self._get_endpoints_for_year(year)
+            all_endpoints.extend(year_endpoints)
+        
+        return all_endpoints
+
+    async def _suggest_alternative_years(self, failed_year: int) -> List[int]:
+        """Suggest alternative years to try based on common availability"""
+        # Common years that are typically available
+        common_years = [2023, 2022, 2021, 2020, 2019, 2018, 2017, 2016, 2015]
+        
+        # Remove the failed year and sort by proximity
+        available_years = [y for y in common_years if y != failed_year]
+        available_years.sort(key=lambda y: abs(y - failed_year))
+        
+        return available_years[:3]  # Return top 3 alternatives
 
     async def fetch_urban_data_async(
         self, endpoints: List[Dict[str, Any]]
@@ -444,14 +630,13 @@ class AsyncUrbanDataETL:
                     conn.execute(text(drop_sql))
                     logger.info("Dropped existing tables")
 
-                # Create urban_institute_data table
+                # Create urban_institute_data table with base columns
                 urban_table_sql = """
                 CREATE TABLE IF NOT EXISTS urban_institute_data (
                     id SERIAL PRIMARY KEY,
                     data_source VARCHAR(50) DEFAULT 'urban_institute',
                     endpoint VARCHAR(255),
                     year INTEGER,
-                    data_json JSONB,
                     fetched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -476,7 +661,6 @@ class AsyncUrbanDataETL:
                 CREATE INDEX IF NOT EXISTS idx_urban_data_source ON urban_institute_data(data_source);
                 CREATE INDEX IF NOT EXISTS idx_urban_data_endpoint ON urban_institute_data(endpoint);
                 CREATE INDEX IF NOT EXISTS idx_urban_data_year ON urban_institute_data(year);
-                CREATE INDEX IF NOT EXISTS idx_urban_data_json ON urban_institute_data USING GIN(data_json);
                 CREATE INDEX IF NOT EXISTS idx_urban_metadata_endpoint ON urban_institute_metadata(endpoint);
                 """
 
@@ -491,6 +675,77 @@ class AsyncUrbanDataETL:
             logger.error(f"Failed to create tables: {e}")
             raise
 
+    def _ensure_columns_exist(self, df: pd.DataFrame):
+        """Dynamically add columns to the table based on DataFrame structure"""
+        try:
+            with self.engine.connect() as conn:
+                # Get existing columns
+                existing_columns_sql = """
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_name = 'urban_institute_data'
+                """
+                result = conn.execute(text(existing_columns_sql))
+                existing_columns = {row[0] for row in result}
+
+                # Get DataFrame columns (excluding metadata columns)
+                metadata_columns = {'data_source', 'endpoint', 'year', 'fetched_at'}
+                data_columns = set(df.columns) - metadata_columns
+
+                # Add missing columns
+                for col in data_columns:
+                    if col not in existing_columns:
+                        # Determine column type based on data
+                        sample_value = df[col].dropna().iloc[0] if not df[col].dropna().empty else None
+                        
+                        if sample_value is not None:
+                            if isinstance(sample_value, (int, np.integer)):
+                                col_type = "BIGINT"
+                            elif isinstance(sample_value, (float, np.floating)):
+                                col_type = "DOUBLE PRECISION"
+                            elif isinstance(sample_value, bool):
+                                col_type = "BOOLEAN"
+                            elif isinstance(sample_value, (str, np.character)):
+                                # Check if it's a date string
+                                try:
+                                    pd.to_datetime(sample_value)
+                                    col_type = "TIMESTAMP"
+                                except:
+                                    col_type = "TEXT"
+                            else:
+                                col_type = "TEXT"
+                        else:
+                            col_type = "TEXT"
+
+                        add_column_sql = f"ALTER TABLE urban_institute_data ADD COLUMN IF NOT EXISTS \"{col}\" {col_type}"
+                        conn.execute(text(add_column_sql))
+                        logger.info(f"Added column: {col} ({col_type})")
+
+                conn.commit()
+                logger.info("Column structure updated successfully")
+
+        except Exception as e:
+            logger.error(f"Failed to ensure columns exist: {e}")
+            raise
+
+    def _calculate_optimal_batch_size(self, data_size: int, column_count: int) -> int:
+        """Calculate optimal batch size based on data characteristics"""
+        # Base batch size from config
+        base_batch_size = self.config.get("async", {}).get("db_batch_size", 1000)
+        
+        # Adjust based on data size and complexity
+        if data_size < 100:
+            # For small datasets, use smaller batches
+            return min(base_batch_size, 500)
+        elif column_count > 50:
+            # For wide datasets, reduce batch size to avoid memory issues
+            return min(base_batch_size, 500)
+        elif data_size > 10000:
+            # For very large datasets, increase batch size slightly for efficiency
+            return min(base_batch_size * 2, 200)
+        else:
+            return base_batch_size
+
     async def insert_urban_data_async(self, urban_data: pd.DataFrame):
         """Insert Urban Institute data into database"""
         if urban_data.empty:
@@ -502,20 +757,26 @@ class AsyncUrbanDataETL:
                 f"Inserting {len(urban_data)} Urban Institute records into database"
             )
 
-            # Process data in batches
-            batch_size = self.config.get("async", {}).get("db_batch_size", 1000)
+            # Ensure all necessary columns exist in the table
+            self._ensure_columns_exist(urban_data)
+
+            # Calculate optimal batch size based on data characteristics
+            optimal_batch_size = self._calculate_optimal_batch_size(
+                len(urban_data), len(urban_data.columns)
+            )
+            logger.info(f"Using batch size: {optimal_batch_size} (data: {len(urban_data)} records, {len(urban_data.columns)} columns)")
 
             loop = asyncio.get_event_loop()
             with ThreadPoolExecutor() as executor:
-                for i in range(0, len(urban_data), batch_size):
-                    batch = urban_data.iloc[i : i + batch_size]
+                for i in range(0, len(urban_data), optimal_batch_size):
+                    batch = urban_data.iloc[i : i + optimal_batch_size]
 
                     await loop.run_in_executor(
                         executor, self._insert_urban_batch_sync, batch
                     )
 
                     logger.info(
-                        f"Inserted urban batch {i//batch_size + 1}: {len(batch)} records"
+                        f"Inserted urban batch {i//optimal_batch_size + 1}: {len(batch)} records"
                     )
 
             logger.info("Successfully inserted Urban Institute data")
@@ -525,112 +786,86 @@ class AsyncUrbanDataETL:
             raise
 
     def _insert_urban_batch_sync(self, batch: pd.DataFrame):
-        """Synchronous Urban Institute batch insertion"""
+        """Synchronous Urban Institute batch insertion with individual columns"""
         try:
             # Debug: Print batch info
             logger.info(f"Processing batch with {len(batch)} records")
-            logger.info(f"Batch columns: {list(batch.columns)}")
-            logger.info(f"Batch dtypes: {batch.dtypes}")
+            #logger.info(f"Batch columns: {list(batch.columns)}")
+            #logger.info(f"Batch dtypes: {batch.dtypes}")
 
-            # Check for any problematic data types
-            for col in batch.columns:
-                if batch[col].dtype == "object":
-                    logger.info(f"Column {col} has object dtype")
-                    # Check for mixed types
-                    unique_types = set(type(x) for x in batch[col].dropna())
-                    logger.info(f"Column {col} has types: {unique_types}")
-
-            # Prepare data for insertion
-            insert_data = []
-
-            for idx, row in batch.iterrows():
-                try:
-                    # Convert row to JSON for storage with custom encoder
-                    data_json = row.to_dict()
-
-                    # Clean NaN values from the data
-                    cleaned_data_json = {}
-                    for key, value in data_json.items():
-                        if pd.isna(value) or (
-                            isinstance(value, float) and str(value) == "nan"
-                        ):
-                            cleaned_data_json[key] = None
-                        elif isinstance(value, str) and value.lower() == "nan":
-                            cleaned_data_json[key] = None
-                        else:
-                            cleaned_data_json[key] = value
-
-                    # Clean and validate data
-                    data_source = str(row.get("data_source", "urban_institute"))
-                    endpoint = str(row.get("endpoint", ""))
-                    year = row.get("year")
-
-                    # Debug: Print year value and type
-                    logger.debug(f"Year value: {year}, type: {type(year)}")
-
-                    # Handle year data type - ensure it's an integer
-                    if pd.isna(year) or year is None:
-                        year = datetime.now().year
-                    else:
-                        try:
-                            # Convert to string first, then to float, then to int
-                            year_str = str(year)
-                            year_float = float(year_str)
-                            year = int(year_float)
-                        except (ValueError, TypeError) as e:
-                            logger.warning(
-                                f"Could not convert year '{year}' to int: {e}"
-                            )
-                            year = datetime.now().year
-
-                    # Serialize JSON data
-                    try:
-                        json_data = json.dumps(cleaned_data_json, cls=TimestampEncoder)
-                        logger.debug(
-                            f"JSON serialization successful, length: {len(json_data)}"
-                        )
-                    except Exception as e:
-                        logger.error(f"JSON serialization failed: {e}")
-                        logger.error(f"Data to serialize: {cleaned_data_json}")
-                        raise
-
-                    # Ensure all values are the correct types
-                    record = (
-                        str(data_source),
-                        str(endpoint),
-                        int(year),
-                        str(json_data),
-                    )
-
-                    # Debug: Print record types
-                    logger.debug(f"Record types: {[type(x) for x in record]}")
-
-                    insert_data.append(record)
-
-                except Exception as e:
-                    logger.error(f"Failed to prepare row {idx}: {e}")
-                    logger.error(f"Row data: {row.to_dict()}")
-                    logger.error(f"Row types: {row.dtypes}")
-                    raise
+            # Get metadata columns and data columns
+            metadata_columns = {'data_source', 'endpoint', 'year', 'fetched_at'}
+            data_columns = [col for col in batch.columns if col not in metadata_columns]
+            
+            # Prepare column names for SQL (with quotes to handle special characters)
+            all_columns = list(metadata_columns) + data_columns
+            quoted_columns = [f'"{col}"' for col in all_columns]
+            
+            # Create placeholders for SQL values
+            placeholders = [f':{col}' for col in all_columns]
+            
+            # Build dynamic INSERT SQL
+            insert_sql = f"""
+            INSERT INTO urban_institute_data ({', '.join(quoted_columns)})
+            VALUES ({', '.join(placeholders)})
+            """
 
             # Insert records one by one to avoid batch issues
             with self.engine.connect() as conn:
-                insert_sql = """
-                INSERT INTO urban_institute_data (data_source, endpoint, year, data_json)
-                VALUES (:data_source, :endpoint, :year, :data_json)
-                """
-
-                for record in insert_data:
-                    data_source, endpoint, year, data_json = record
-                    conn.execute(
-                        text(insert_sql),
-                        {
-                            "data_source": data_source,
-                            "endpoint": endpoint,
-                            "year": year,
-                            "data_json": data_json,
-                        },
-                    )
+                for idx, row in batch.iterrows():
+                    try:
+                        # Prepare values for insertion
+                        values = {}
+                        
+                        # Handle metadata columns
+                        values['data_source'] = str(row.get('data_source', 'urban_institute'))
+                        values['endpoint'] = str(row.get('endpoint', ''))
+                        
+                        # Handle year
+                        year = row.get('year')
+                        if pd.isna(year) or year is None:
+                            year = datetime.now().year
+                        else:
+                            try:
+                                year_str = str(year)
+                                year_float = float(year_str)
+                                year = int(year_float)
+                            except (ValueError, TypeError) as e:
+                                logger.warning(f"Could not convert year '{year}' to int: {e}")
+                                year = datetime.now().year
+                        values['year'] = year
+                        
+                        # Handle fetched_at
+                        fetched_at = row.get('fetched_at')
+                        if pd.isna(fetched_at) or fetched_at is None:
+                            fetched_at = datetime.now()
+                        values['fetched_at'] = fetched_at
+                        
+                        # Handle data columns
+                        for col in data_columns:
+                            value = row.get(col)
+                            
+                            # Clean NaN values
+                            if pd.isna(value) or (
+                                isinstance(value, float) and str(value) == "nan"
+                            ):
+                                values[col] = None
+                            elif isinstance(value, str) and value.lower() == "nan":
+                                values[col] = None
+                            else:
+                                # Convert numpy types to Python types for database insertion
+                                if hasattr(value, 'item'):
+                                    values[col] = value.item()
+                                else:
+                                    values[col] = value
+                        
+                        # Execute insert
+                        conn.execute(text(insert_sql), values)
+                        
+                    except Exception as e:
+                        logger.error(f"Failed to insert row {idx}: {e}")
+                        logger.error(f"Row data: {row.to_dict()}")
+                        raise
 
                 conn.commit()
 
@@ -680,12 +915,11 @@ class AsyncUrbanDataETL:
                 # Save files in thread pool
                 loop = asyncio.get_event_loop()
                 with ThreadPoolExecutor() as executor:
-                    await loop.run_in_executor(
-                        executor,
-                        urban_data.to_csv,
-                        "urban_institute_data.csv",
-                        index=False,
-                    )
+                    # Create a wrapper function to call to_csv with index=False
+                    def save_csv():
+                        return urban_data.to_csv("urban_institute_data.csv", index=False)
+                    
+                    await loop.run_in_executor(executor, save_csv)
 
                 logger.info("Backup files saved successfully")
 
@@ -693,10 +927,10 @@ class AsyncUrbanDataETL:
             logger.error(f"Failed to save backup files: {e}")
             raise
 
-    async def run_etl_async(self, endpoints: List[Dict[str, Any]] = None):
+    async def run_etl_async(self, begin_year: int, end_year: int, endpoints: List[Dict[str, Any]] = None):
         """Run the complete Urban Institute ETL process"""
         try:
-            logger.info("Starting Urban Institute ETL process")
+            logger.info(f"Starting Urban Institute ETL process for years {begin_year}-{end_year}")
 
             # Step 1: Connect to database
             self.connect_to_database()
@@ -710,28 +944,29 @@ class AsyncUrbanDataETL:
             try:
                 # Step 4: Fetch data from Urban Institute
                 if endpoints is None:
-                    # Use default endpoints from config
-                    urban_config = self.config.get("urban", {})
-                    endpoints_config = urban_config.get("endpoints", {})
+                    # Generate endpoints for all years in the range
+                    endpoints = self._get_all_endpoints_for_years(begin_year, end_year)
 
-                    endpoints = [
-                        {
-                            "endpoint": endpoints_config.get(
-                                "schools_directory",
-                                "/api/v1/schools/ccd/directory/{year}",
-                            ),
-                            "parameters": {"limit": 50},
-                            "year": 2023,
-                        },
-                        {
-                            "endpoint": endpoints_config.get(
-                                "school_characteristics",
-                                "/api/v1/schools/ccd/enrollment/{year}/grade-12",
-                            ),
-                            "parameters": {"limit": 50},
-                            "year": 2023,
-                        },
-                    ]
+                # Get metadata for all endpoints to understand pagination requirements
+                logger.info("Getting endpoint metadata for pagination planning...")
+                metadata_tasks = []
+                for endpoint_config in endpoints:
+                    task = self._get_endpoint_metadata(
+                        endpoint_config["endpoint"], 
+                        endpoint_config["year"]
+                    )
+                    metadata_tasks.append(task)
+                
+                endpoint_metadata = await asyncio.gather(*metadata_tasks, return_exceptions=True)
+                
+                # Log metadata summary
+                for i, metadata in enumerate(endpoint_metadata):
+                    if isinstance(metadata, dict) and metadata.get("status") == "available":
+                        total_records = metadata.get("total_records", "unknown")
+                        has_pagination = metadata.get("has_pagination", False)
+                        logger.info(f"Endpoint {i+1}: {total_records} total records, pagination: {has_pagination}")
+                    elif isinstance(metadata, Exception):
+                        logger.warning(f"Failed to get metadata for endpoint {i+1}: {metadata}")
 
                 urban_data = await self.fetch_urban_data_async(endpoints)
 
@@ -746,8 +981,24 @@ class AsyncUrbanDataETL:
                         record_count = len(endpoint_data)
                         await self.update_metadata_async(endpoint, record_count)
 
-                # Step 7: Save backup CSV files
-                await self.save_backup_files_async(urban_data)
+                    # Step 7: Save backup CSV files
+                    await self.save_backup_files_async(urban_data)
+                else:
+                    # If no data was fetched, suggest alternative years
+                    if endpoints and endpoints[0].get("year"):
+                        failed_year = endpoints[0]["year"]
+                        logger.warning(f"No data fetched for year {failed_year}")
+                        
+                        # Check if the year is available
+                        is_available = await self._check_year_availability(failed_year)
+                        if not is_available:
+                            logger.error(f"Year {failed_year} appears to be unavailable")
+                            alternative_years = await self._suggest_alternative_years(failed_year)
+                            logger.info(f"Suggested alternative years: {alternative_years}")
+                            logger.info("Consider running the ETL process with one of these years")
+                        else:
+                            logger.info(f"Year {failed_year} appears to be available but returned no data")
+                            logger.info("This might be a temporary API issue")
 
                 logger.info("Urban Institute ETL process completed successfully")
 
@@ -765,39 +1016,40 @@ class AsyncUrbanDataETL:
 
 async def main():
     """Main async function to run the Urban Institute ETL process"""
+    import argparse
+    
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description="Urban Institute ETL Process")
+    parser.add_argument("--begin-year", type=int, required=True, help="Start year for Urban Institute data fetch")
+    parser.add_argument("--end-year", type=int, required=True, help="End year for Urban Institute data fetch")
+    parser.add_argument("--config", type=str, default="config.json", help="Configuration file path")
+    args = parser.parse_args()
+    
     try:
-        # Load configuration to get default years
-        with open("config.json", "r") as f:
-            config = json.load(f)
-
-        # Get default years from config
-        default_years = config.get("etl", {}).get("urban_years", [2020, 2023])
-        default_year = default_years[-1]  # Use the most recent year
-
         # Initialize ETL process
-        etl = AsyncUrbanDataETL()
+        etl = AsyncUrbanDataETL(config_file=args.config)
 
-        # Define Urban Institute endpoints to fetch with year from config
-        urban_endpoints = [
-            {
-                "endpoint": "/api/v1/schools/ccd/directory/{year}",
-                "parameters": {"limit": 50},
-                "year": default_year,
-            },
-            {
-                "endpoint": "/api/v1/schools/ccd/enrollment/{year}/grade-12",
-                "parameters": {"limit": 50},
-                "year": default_year,
-            },
-        ]
+        # Run ETL process with year range
+        await etl.run_etl_async(begin_year=args.begin_year, end_year=args.end_year)
 
-        # Run ETL process
-        await etl.run_etl_async(endpoints=urban_endpoints)
-
-        print("Urban Institute ETL process completed successfully!")
+        logger.info("Urban Institute ETL process completed successfully!")
 
     except Exception as e:
         logger.error(f"Urban Institute ETL process failed: {e}")
+        
+        # Provide helpful suggestions for common failures
+        if "500" in str(e) or "Server Error" in str(e):
+            logger.error("\n" + "="*60)
+            logger.error("URBAN INSTITUTE API SERVER ERROR DETECTED")
+            logger.error("="*60)
+            logger.error("This is a server-side issue on Urban Institute's end.")
+            logger.error("Recommendations:")
+            logger.error("1. Wait a few minutes and try again")
+            logger.error("2. Try a different year (e.g., 2022, 2021, 2020)")
+            logger.error("3. Check Urban Institute API status page")
+            logger.error("4. The API may be under maintenance")
+            logger.error("="*60)
+        
         sys.exit(1)
 
 

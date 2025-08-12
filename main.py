@@ -143,15 +143,21 @@ class ModularETLController:
             logger.error(f"Census ETL process failed: {e}")
             raise
 
-    async def run_urban_etl(self, endpoints: list = None):
+    async def run_urban_etl(self, begin_year: int = None, end_year: int = None, endpoints: list = None):
         """Run Urban Institute ETL process"""
         try:
-            logger.info("Starting Urban Institute ETL process")
+            # Use config defaults if no years specified
+            if begin_year is None:
+                begin_year = self.urban_years[0]
+            if end_year is None:
+                end_year = self.urban_years[1]
+                
+            logger.info(f"Starting Urban Institute ETL process for years {begin_year}-{end_year}")
 
             qa_breakpoint("Starting Urban Institute ETL process", None)
 
             # Run Urban Institute ETL using the modular component
-            await self.urban_etl.run_etl_async(endpoints=endpoints)
+            await self.urban_etl.run_etl_async(begin_year=begin_year, end_year=end_year, endpoints=endpoints)
 
             logger.info("Urban Institute ETL process completed successfully")
 
@@ -163,6 +169,8 @@ class ModularETLController:
         self,
         census_begin_year: int = None,
         census_end_year: int = None,
+        urban_begin_year: int = None,
+        urban_end_year: int = None,
         urban_endpoints: list = None,
     ):
         """Run complete multi-source ETL process"""
@@ -179,8 +187,8 @@ class ModularETLController:
                 tasks.append(self.run_census_etl(census_begin_year, census_end_year))
 
             # Add Urban Institute ETL task
-            if urban_endpoints is not None:
-                tasks.append(self.run_urban_etl(urban_endpoints))
+            if urban_begin_year is not None or urban_end_year is not None:
+                tasks.append(self.run_urban_etl(urban_begin_year, urban_end_year, urban_endpoints))
 
             # If no specific tasks, run with defaults
             if not tasks:
@@ -217,7 +225,13 @@ async def main():
         "--census-end-year", type=int, help="End year for Census data fetch"
     )
     parser.add_argument(
-        "--urban-endpoints", nargs="+", help="Urban Institute endpoints to fetch"
+        "--urban-begin-year", type=int, help="Start year for Urban Institute data fetch"
+    )
+    parser.add_argument(
+        "--urban-end-year", type=int, help="End year for Urban Institute data fetch"
+    )
+    parser.add_argument(
+        "--urban-endpoints", nargs="+", help="Urban Institute endpoints to fetch (optional)"
     )
     parser.add_argument(
         "--config", type=str, default="config.json", help="Configuration file path"
@@ -253,11 +267,11 @@ async def main():
         # Show status if requested
         if args.status:
             status = etl_controller.get_etl_status()
-            print("📊 ETL Component Status:")
-            print(f"   Census ETL: {status['census_etl']}")
-            print(f"   Urban ETL: {status['urban_etl']}")
-            print(f"   Census years: {status['config_years']['census']}")
-            print(f"   Urban years: {status['config_years']['urban']}")
+            logger.info("📊 ETL Component Status:")
+            logger.info(f"   Census ETL: {status['census_etl']}")
+            logger.info(f"   Urban ETL: {status['urban_etl']}")
+            logger.info(f"   Census years: {status['config_years']['census']}")
+            logger.info(f"   Urban years: {status['config_years']['urban']}")
             return
 
         # Run specific ETL processes based on arguments
@@ -266,16 +280,18 @@ async def main():
                 args.census_begin_year, args.census_end_year
             )
         elif args.urban_only:
-            await etl_controller.run_urban_etl(args.urban_endpoints)
+            await etl_controller.run_urban_etl(args.urban_begin_year, args.urban_end_year, args.urban_endpoints)
         else:
             # Run multi-source ETL
             await etl_controller.run_multi_source_etl(
                 census_begin_year=args.census_begin_year,
                 census_end_year=args.census_end_year,
+                urban_begin_year=args.urban_begin_year,
+                urban_end_year=args.urban_end_year,
                 urban_endpoints=args.urban_endpoints,
             )
 
-        print("✅ Modular ETL process completed successfully!")
+        logger.info("✅ Modular ETL process completed successfully!")
 
     except Exception as e:
         logger.error(f"Modular ETL process failed: {e}")

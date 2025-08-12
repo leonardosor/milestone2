@@ -32,6 +32,9 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import List, Dict, Optional
 import backoff
 from dataclasses import dataclass
+from geopy.geocoders import Nominatim
+from geopy.exc import GeocoderTimedOut, GeocoderUnavailable
+import time
 
 # Configure logging
 logging.basicConfig(
@@ -419,9 +422,9 @@ class AsyncCensusDataETL:
             raise
 
     async def create_locale_data_async(self, census_data: pd.DataFrame) -> pd.DataFrame:
-        """Create location mapping data with async processing using pgeocode"""
+        """Create enhanced location mapping data with lat/long coordinates using geopy"""
         try:
-            logger.info("Creating locale data mapping using pgeocode")
+            logger.info("Creating enhanced locale data mapping using geopy and pgeocode")
 
             unique_zips = pd.DataFrame(census_data["zip code"].drop_duplicates())
 
@@ -434,72 +437,129 @@ class AsyncCensusDataETL:
 
             all_states = []
             all_cities = []
+            all_latitudes = []
+            all_longitudes = []
+            all_counties = []
 
             for i, zip_batch in enumerate(zip_batches):
-                logger.info(f"Processing locale batch {i+1}/{len(zip_batches)}")
+                logger.info(f"Processing enhanced locale batch {i+1}/{len(zip_batches)}")
 
                 # Process batch in thread pool
                 loop = asyncio.get_event_loop()
                 with ThreadPoolExecutor() as executor:
                     batch_results = await loop.run_in_executor(
-                        executor, self._process_zip_batch, zip_batch
+                        executor, self._process_enhanced_zip_batch, zip_batch
                     )
 
                 all_states.extend(batch_results["states"])
                 all_cities.extend(batch_results["cities"])
+                all_latitudes.extend(batch_results["latitudes"])
+                all_longitudes.extend(batch_results["longitudes"])
+                all_counties.extend(batch_results["counties"])
 
-                # Small delay between batches
-                await asyncio.sleep(0.1)
+                # Small delay between batches to respect rate limits
+                await asyncio.sleep(0.2)
 
             unique_zips["state"] = all_states
             unique_zips["city"] = all_cities
+            unique_zips["latitude"] = all_latitudes
+            unique_zips["longitude"] = all_longitudes
+            unique_zips["county"] = all_counties
 
             logger.info(
-                f"Created locale mapping for {len(unique_zips)} unique zip codes"
+                f"Created enhanced locale mapping for {len(unique_zips)} unique zip codes"
             )
             return unique_zips
 
         except Exception as e:
-            logger.error(f"Failed to create locale data: {e}")
+            logger.error(f"Failed to create enhanced locale data: {e}")
             raise
 
-    def _process_zip_batch(self, zip_codes: List[str]) -> Dict[str, List[str]]:
-        """Process a batch of zip codes using pgeocode (runs in thread pool)"""
+    def _process_enhanced_zip_batch(self, zip_codes: List[str]) -> Dict[str, List]:
+        """Process a batch of zip codes using both pgeocode and geopy for enhanced data"""
         states = []
         cities = []
+        latitudes = []
+        longitudes = []
+        counties = []
 
-        # Initialize pgeocode for US zip codes inside the thread
+        # Initialize geocoders inside the thread
         geo_coder = pgeocode.Nominatim("us")
+        geopy_geocoder = Nominatim(user_agent="census_etl_locale_mapper")
 
         for zip_code in zip_codes:
             try:
                 # Clean zip code
                 clean_zip = str(zip_code).strip()
-
-                # Query location data using pgeocode
+                
+                # First, get basic info from pgeocode (fast and reliable)
                 location = geo_coder.query_postal_code(clean_zip)
-
-                # Extract state and city information
+                
                 if location is not None and not pd.isna(location.state_code):
                     state = location.state_code
-                    city = (
-                        location.place_name
-                        if not pd.isna(location.place_name)
-                        else None
-                    )
+                    city = location.place_name if not pd.isna(location.place_name) else None
+                    
+                    # Try to get enhanced data from geopy
+                    try:
+                        # Create a search query for the zip code
+                        search_query = f"{clean_zip}, USA"
+                        
+                        # Get location data from geopy
+                        geopy_location = geopy_geocoder.geocode(search_query, timeout=10)
+                        
+                        if geopy_location:
+                            lat = geopy_location.latitude
+                            lon = geopy_location.longitude
+                            
+                            # Try to get county information from address components
+                            county = None
+                            if hasattr(geopy_location, 'raw') and 'address' in geopy_location.raw:
+                                address = geopy_location.raw['address']
+                                county = address.get('county') or address.get('state_district')
+                            
+                            # If no county from geopy, try reverse geocoding
+                            if not county and lat and lon:
+                                try:
+                                    reverse_location = geopy_geocoder.reverse(f"{lat}, {lon}", timeout=10)
+                                    if reverse_location and hasattr(reverse_location, 'raw'):
+                                        address = reverse_location.raw.get('address', {})
+                                        county = address.get('county') or address.get('state_district')
+                                except (GeocoderTimedOut, GeocoderUnavailable):
+                                    county = None
+                        else:
+                            lat, lon, county = None, None, None
+                            
+                    except (GeocoderTimedOut, GeocoderUnavailable) as geopy_error:
+                        logger.debug(f"Geopy failed for zip {clean_zip}: {geopy_error}")
+                        lat, lon, county = None, None, None
+                        
                 else:
-                    state = None
-                    city = None
+                    state, city, lat, lon, county = None, None, None, None, None
 
                 states.append(state)
                 cities.append(city)
+                latitudes.append(lat)
+                longitudes.append(lon)
+                counties.append(county)
+
+                # Small delay to respect geopy rate limits
+                time.sleep(0.1)
 
             except Exception as e:
                 logger.debug(f"Failed to process zip code {zip_code}: {e}")
                 states.append(None)
                 cities.append(None)
+                latitudes.append(None)
+                longitudes.append(None)
+                counties.append(None)
 
-        return {"states": states, "cities": cities}
+        return {
+            "states": states, 
+            "cities": cities, 
+            "latitudes": latitudes, 
+            "longitudes": longitudes,
+            "counties": counties
+        }
 
     def create_tables(self, drop_existing=False):
         """Create database tables, optionally dropping existing ones first"""
@@ -574,13 +634,16 @@ class AsyncCensusDataETL:
                 );
                 """
 
-                # Create locale_data table
+                # Create enhanced locale_data table
                 locale_table_sql = """
                 CREATE TABLE IF NOT EXISTS locale_data (
                     id SERIAL PRIMARY KEY,
                     zip_code VARCHAR(10) UNIQUE,
                     state VARCHAR(50),
                     city VARCHAR(100),
+                    latitude DECIMAL(10, 8),
+                    longitude DECIMAL(11, 8),
+                    county VARCHAR(100),
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
@@ -606,9 +669,13 @@ class AsyncCensusDataETL:
                     ADD COLUMN IF NOT EXISTS city VARCHAR(100);
                     """
                     conn.execute(text(alter_census_sql))
-
+                    
+                    # Add missing columns to locale_data table
                     alter_locale_sql = """
                     ALTER TABLE locale_data
+                    ADD COLUMN IF NOT EXISTS latitude DECIMAL(10, 8),
+                    ADD COLUMN IF NOT EXISTS longitude DECIMAL(11, 8),
+                    ADD COLUMN IF NOT EXISTS county VARCHAR(100),
                     ADD COLUMN IF NOT EXISTS state VARCHAR(50),
                     ADD COLUMN IF NOT EXISTS city VARCHAR(100);
                     """
@@ -734,6 +801,12 @@ class AsyncCensusDataETL:
             # Prepare data for insertion
             locale_data_db = locale_data.copy()
             locale_data_db.rename(columns={"zip code": "zip_code"}, inplace=True)
+            
+            # Ensure all required columns exist
+            required_columns = ["zip_code", "state", "city", "latitude", "longitude", "county"]
+            for col in required_columns:
+                if col not in locale_data_db.columns:
+                    locale_data_db[col] = None
 
             # Process in batches
             batch_size = self.config.get("locale_db_batch_size", 500)
@@ -782,10 +855,10 @@ class AsyncCensusDataETL:
             logger.error(f"Failed to save backup files: {e}")
             raise
 
-    async def run_etl_async(self, begin_year: int = 2015, end_year: int = 2024):
+    async def run_etl_async(self, begin_year: int, end_year: int):
         """Run the complete async ETL process"""
         try:
-            logger.info("Starting async ETL process")
+            logger.info(f"Starting async ETL process for years {begin_year}-{end_year}")
 
             # Step 1: Connect to database
             self.connect_to_database()
@@ -837,24 +910,24 @@ class AsyncCensusDataETL:
 
 async def main():
     """Main async function to run the ETL process"""
+    import argparse
+    
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description="Census ETL Process")
+    parser.add_argument("--begin-year", type=int, required=True, help="Start year for Census data fetch")
+    parser.add_argument("--end-year", type=int, required=True, help="End year for Census data fetch")
+    parser.add_argument("--config", type=str, default="config.json", help="Configuration file path")
+    parser.add_argument("--drop-existing", action="store_true", help="Drop existing tables before creating new ones")
+    args = parser.parse_args()
+    
     try:
-        # Load configuration to get default years
-        with open("config.json", "r") as f:
-            config = json.load(f)
-
-        # Get default years from config
-        default_years = config.get("etl", {}).get("census_years", [2015, 2019])
-        begin_year = default_years[0]
-        end_year = default_years[1]
-
         # Initialize ETL process with option to drop existing tables
-        # Set drop_existing_tables=True to start fresh, False to keep existing data
-        etl = AsyncCensusDataETL(drop_existing_tables=True)
+        etl = AsyncCensusDataETL(config_file=args.config, drop_existing_tables=args.drop_existing)
 
-        # Run ETL process with years from config
-        await etl.run_etl_async(begin_year=begin_year, end_year=end_year)
+        # Run ETL process with years from arguments
+        await etl.run_etl_async(begin_year=args.begin_year, end_year=args.end_year)
 
-        print("Async ETL process completed successfully!")
+        logger.info("Async ETL process completed successfully!")
 
     except Exception as e:
         logger.error(f"Async ETL process failed: {e}")
