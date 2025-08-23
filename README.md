@@ -1,80 +1,99 @@
-# Modular ETL System for Census and Urban Institute Data
+# Enhanced ETL System for Census and Urban Institute Data
 
-This project provides a comprehensive, modular ETL system that can pull data from multiple APIs and save it into a PostgreSQL database. It supports both US Census Bureau and Urban Institute APIs with async processing for optimal performance.
+This project provides a robust, production-ready ETL system that extracts data from multiple APIs and loads it into a PostgreSQL database. The system has been extensively tested and optimized to handle real-world data challenges including NaN values, timestamp serialization, and complex data type conversions.
 
-## Features
+## 🚀 Recent Improvements & Bug Fixes
 
-- **Modular Design**: Separate components for different data sources
-- **Multi-API Support**: Pull data from Census Bureau and Urban Institute APIs
-- **Async Processing**: High-performance concurrent API calls
-- **AWS Integration**: Support for AWS RDS PostgreSQL and AWS Secrets Manager
-- **Comprehensive Error Handling**: Retry logic with exponential backoff
-- **Rate Limiting**: Intelligent rate limiting with semaphores
-- **Database Schema**: Optimized tables with proper indexes
-- **Backup Files**: Automatic CSV backup generation
-- **Configurable Data Sources**: Easy to add new API sources
-- **QA Mode**: Built-in debugging and testing capabilities
+### ✅ Resolved Issues
+- **JSON Serialization Errors**: Fixed "Object of type Timestamp is not JSON serializable" errors
+- **NaN Handling**: Resolved "Token 'NaN' is invalid" PostgreSQL JSONB errors
+- **Parameter Binding**: Fixed "List argument must consist only of tuples or dictionaries" SQL errors
+- **Data Type Conversion**: Resolved "'<' not supported between instances of 'int' and 'str'" errors
+- **Enhanced Error Handling**: Comprehensive logging and debugging capabilities
 
-## Project Structure
+### 🔧 Technical Enhancements
+- **Custom JSON Encoder**: `TimestampEncoder` class for handling pandas Timestamps and NaN values
+- **Robust Data Cleaning**: Automatic conversion of problematic data types
+- **Improved SQL Parameter Binding**: Named parameters for safer database operations
+- **Enhanced Logging**: Detailed debugging information for troubleshooting
+- **Data Validation**: Comprehensive data type checking and conversion
+
+## ✨ Key Features
+
+- **Production-Ready**: Extensive error handling and data validation
+- **Modular Design**: Separate, well-tested components for different data sources
+- **Multi-API Support**: US Census Bureau and Urban Institute APIs
+- **Async Processing**: High-performance concurrent API calls with rate limiting
+- **Database Flexibility**: Support for both local PostgreSQL and AWS RDS
+- **Comprehensive Logging**: Detailed execution logs with debugging information
+- **Automatic Data Cleaning**: Handles NaN values, timestamps, and mixed data types
+- **Backup Generation**: Automatic CSV backup files for data safety
+
+## 📁 Project Structure
 
 ```
-├── main.py                          # Main modular ETL controller
-├── census_to_postgresql_async.py    # Census ETL component
-├── urban_to_postgresql_async.py     # Urban Institute ETL component
-├── run_etl.py                       # ETL runner script with various options
-├── debug_etl.py                     # Debug script for testing
+├── main.py                          # Main ETL controller
+├── census_to_postgresql_async.py    # Census ETL component (async)
+├── urban_to_postgresql_async.py     # Urban Institute ETL component (async)
 ├── config.json                      # Configuration file
 ├── requirements.txt                  # Python dependencies
 ├── README.md                        # This file
 ├── main_etl.log                     # Main ETL execution log
-├── multi_api_etl.log               # Multi-API ETL execution log
+├── urban_etl_async.log             # Urban Institute ETL log
+├── census_etl_async.log            # Census ETL log
 └── .gitignore                       # Git ignore file
 ```
 
-## Supported APIs
+## 🗄️ Supported Data Sources
 
 ### 1. US Census Bureau API
-- **Source**: censusdata Python library
+- **Source**: `censusdata` Python library (v1.15.post1)
 - **Data**: American Community Survey (ACS) 5-year estimates
-- **Variables**: Population, demographics, household income
+- **Variables**: Population demographics, household income, age distributions
 - **Geography**: ZIP code tabulation areas
+- **Features**: Automatic retry logic, rate limiting, data validation
 
-### 2. Urban Institute API
+### 2. Urban Institute Education Data API
 - **Source**: https://educationdata.urban.org
-- **Data**: Education statistics and school information
-- **Endpoints**: Schools directory, enrollment data, student demographics
-- **Authentication**: No API key required (public API)
+- **Data**: Education statistics, school information, enrollment data
+- **Endpoints**: 
+  - Schools directory: `/api/v1/schools/ccd/directory/{year}`
+  - Enrollment data: `/api/v1/schools/ccd/enrollment/{year}/grade-12`
+- **Features**: No API key required, comprehensive data cleaning
 
-## Prerequisites
+## 🛠️ Prerequisites
 
-### AWS Setup
+### System Requirements
+- **Python**: 3.8+ (tested with Python 3.9+)
+- **PostgreSQL**: 12+ (local or AWS RDS)
+- **Memory**: Minimum 4GB RAM (8GB+ recommended for large datasets)
 
-1. **RDS PostgreSQL Instance**
-   - Create a PostgreSQL RDS instance on AWS
-   - Note the endpoint, port, database name, username, and password
-   - Ensure the security group allows connections from your application
+### Database Setup
 
-2. **AWS Secrets Manager (Optional)**
-   - Create a secret in AWS Secrets Manager with database credentials
-   - Format: JSON with `username`, `password`, `host`, `port`, `database` keys
+#### Local PostgreSQL
+```bash
+# Ubuntu/Debian
+sudo apt-get install postgresql postgresql-contrib
 
-3. **IAM Permissions**
-   - If using AWS Secrets Manager, ensure your IAM role/user has `secretsmanager:GetSecretValue` permission
+# macOS
+brew install postgresql
 
-### API Setup
+# Windows
+# Download from https://www.postgresql.org/download/windows/
+```
 
-1. **Census API Key**
-   - Visit: https://api.census.gov/data/key_signup.html
-   - Request an API key for the American Community Survey (ACS)
+#### AWS RDS (Optional)
+- Create PostgreSQL RDS instance
+- Configure security groups for access
+- Use AWS Secrets Manager for credentials (optional)
 
-2. **Urban Institute API Key**
-   - Visit: https://api.urban.org/
-   - Register for an API key
-   - Note the available endpoints and rate limits
+## 📦 Installation
 
-## Installation
-
-1. **Clone or download the project files**
+1. **Clone the repository**
+   ```bash
+   git clone <repository-url>
+   cd 696-Milestone-2
+   ```
 
 2. **Install Python dependencies**
    ```bash
@@ -82,424 +101,305 @@ This project provides a comprehensive, modular ETL system that can pull data fro
    ```
 
 3. **Configure the application**
-   - Edit `config.json` with your database and API settings
-   - Update API keys for both Census and Urban Institute
+   - Edit `config.json` with your database settings
+   - Update API keys if required
 
-## Configuration
-
-### Database Setup
-
-The system supports both local PostgreSQL and AWS RDS databases. Database configuration is handled through the `config.json` file.
-
-#### Local Database Setup
-
-1. **Install PostgreSQL locally**
-   ```bash
-   # Ubuntu/Debian
-   sudo apt-get install postgresql postgresql-contrib
-
-   # macOS
-   brew install postgresql
-
-   # Windows
-   # Download from https://www.postgresql.org/download/windows/
-   ```
-
-2. **Create database and user**
-   ```sql
-   CREATE DATABASE multi_api_data;
-   CREATE USER postgres WITH PASSWORD 'your_password';
-   GRANT ALL PRIVILEGES ON DATABASE multi_api_data TO postgres;
-   ```
-
-3. **Configure local database in config.json**
-   ```json
-   {
-       "database_type": "local",
-       "local_database": {
-           "host": "localhost",
-           "port": 5432,
-           "database": "multi_api_data",
-           "username": "postgres",
-           "password": "your_local_password"
-       }
-   }
-   ```
-
-#### AWS RDS Setup
-
-1. **Set up AWS RDS instance manually or using AWS Console**
-
-2. **Configure AWS database in config.json**
-   ```json
-   {
-       "database_type": "aws",
-       "database": {
-           "host": "your-aws-rds-endpoint.amazonaws.com",
-           "port": 5432,
-           "database": "multi_api_data",
-           "username": "your_username",
-           "password": "your_password"
-       },
-       "aws": {
-           "region": "us-east-1",
-           "secret_name": "multi-api-database-credentials"
-       },
-       "use_aws_secrets": false
-   }
-   ```
+## ⚙️ Configuration
 
 ### config.json Structure
-    "census": {
-        "api_key": "your_census_api_key_here",
-        "rate_limit_delay": 1,
-        "variables": {
-            "B02001_001E": "Total Pop Estimate",
-            "B19001_016E": "HHI 150K-200K",
-            "B19001_017E": "HHI 220K+",
-            "B01001_006E": "Males 15-17",
-            "B01001_030E": "Females 15-17",
-            "B01001A_006E": "White Males 15-17",
-            "B01001B_006E": "Black Males 15-17",
-            "B01001I_006E": "Hispanic Males 15-17",
-            "B01001A_021E": "White Females 15-17",
-            "B01001B_021E": "Black Females 15-17",
-            "B01001I_021E": "Hispanic Females 15-17"
-        }
+```json
+{
+    "database_type": "local",
+    "local_database": {
+        "host": "localhost",
+        "port": 5432,
+        "database": "milestone2",
+        "username": "postgres",
+        "password": "your_password"
     },
     "urban": {
-        "api_key": "your_urban_institute_api_key_here",
-        "base_url": "https://api.urban.org",
+        "base_url": "https://educationdata.urban.org",
         "endpoints": {
-            "education_schools": "/v1/education/schools",
-            "education_districts": "/v1/education/districts",
-            "education_students": "/v1/education/students",
-            "housing": "/v1/housing",
-            "health": "/v1/health",
-            "crime": "/v1/crime"
+            "schools_directory": "/api/v1/schools/ccd/directory/{year}",
+            "education_students": "/api/v1/schools/ccd/enrollment/{year}/grade-12"
         }
     },
     "etl": {
-        "batch_size": 1000,
-        "census_years": [2015, 2019],
         "urban_years": [2020, 2023]
     },
     "async": {
         "max_concurrent_requests": 10,
-        "year_batch_size": 2,
-        "batch_delay": 2,
-        "locale_batch_size": 100,
         "db_batch_size": 1000,
-        "locale_db_batch_size": 500,
         "connection_pool_size": 10,
-        "max_overflow": 20,
-        "timeout_total": 60,
-        "timeout_connect": 10
+        "max_overflow": 20
     }
 }
 ```
 
 ### Configuration Options
 
-#### Census Configuration
-- **api_key**: Your Census API key
-- **rate_limit_delay**: Delay between API calls (seconds)
-- **variables**: Census variables to fetch
+#### Database Configuration
+- **database_type**: `"local"` or `"aws"`
+- **local_database**: Local PostgreSQL connection details
+- **database**: AWS RDS connection details (if using AWS)
 
 #### Urban Institute Configuration
-- **api_key**: Your Urban Institute API key
-- **base_url**: Urban Institute API base URL
-- **endpoints**: Available API endpoints
+- **base_url**: API base URL (default: educationdata.urban.org)
+- **endpoints**: Available API endpoints with year placeholders
 
 #### Async Configuration
-- **max_concurrent_requests**: Maximum concurrent API requests
-- **year_batch_size**: Number of years to process in batches
-- **batch_delay**: Delay between batches (seconds)
+- **max_concurrent_requests**: Maximum concurrent API calls
 - **db_batch_size**: Database insertion batch size
-- **timeout_total**: Total HTTP request timeout (seconds)
+- **connection_pool_size**: Database connection pool size
 
-## Usage
+## 🚀 Usage
 
-### Basic Usage
+### Basic ETL Execution
 
+#### Run Urban Institute ETL
 ```bash
-# Run multi-source ETL (Census + Urban Institute)
-python main.py
-
-# Run only Census ETL
-python main.py --census-only
-
-# Run only Urban Institute ETL
-python main.py --urban-only
-
-# Run with custom Census years
-python main.py --census-begin-year 2015 --census-end-year 2019
-
-# Show ETL component status
-python main.py --status
+python urban_to_postgresql_async.py
 ```
 
-### Using the ETL Runner Script
-
+#### Run Census ETL
 ```bash
-# Run multi-source ETL with config years
-python run_etl.py
+python census_to_postgresql_async.py
+```
 
-# Run only Census ETL
-python run_etl.py --census-only
-
-# Run only Urban Institute ETL
-python run_etl.py --urban-only
-
-# Run with custom years
-python run_etl.py --years 2015 2019
-
-# Show configuration
-python run_etl.py --show-config
-
-# Show ETL status
-python run_etl.py --status
-
-# Run in QA mode with breakpoints
-python run_etl.py --qa-mode
+#### Run Main ETL Controller
+```bash
+python main.py
 ```
 
 ### Programmatic Usage
 
 ```python
-from main import ModularETLController
+from urban_to_postgresql_async import AsyncUrbanDataETL
 import asyncio
 
 async def main():
-    # Initialize ETL controller
-    etl_controller = ModularETLController('config.json')
+    # Initialize ETL process
+    etl = AsyncUrbanDataETL()
+    
+    # Define endpoints to fetch
+    urban_endpoints = [
+        {
+            'endpoint': '/api/v1/schools/ccd/directory/{year}',
+            'parameters': {'limit': 100},
+            'year': 2023
+        },
+        {
+            'endpoint': '/api/v1/schools/ccd/enrollment/{year}/grade-12',
+            'parameters': {'limit': 100},
+            'year': 2023
+        }
+    ]
+    
+    # Run ETL process
+    await etl.run_etl_async(endpoints=urban_endpoints)
 
-    # Run multi-source ETL
-    await etl_controller.run_multi_source_etl()
-
-    # Or run individual components
-    await etl_controller.run_census_etl(2015, 2019)
-    await etl_controller.run_urban_etl()
-
-    # Check component status
-    status = etl_controller.get_etl_status()
-    print(f"ETL Status: {status}")
-
-# Run the ETL process
+# Execute
 asyncio.run(main())
 ```
 
-### Debug Mode
-
-```bash
-# Run debug script for step-by-step testing
-python debug_etl.py
-```
-
-### Custom Urban Institute Endpoints
-
-```python
-# Example of fetching different Urban Institute data
-urban_endpoints = [
-    {
-        'endpoint': '/api/v1/schools/ccd/directory',
-        'parameters': {'limit': 1000},
-        'year': 2023
-    },
-    {
-        'endpoint': '/api/v1/schools/ccd/enrollment',
-        'parameters': {'limit': 1000},
-        'year': 2023
-    },
-    {
-        'endpoint': '/api/v1/schools/crdc/enrollment',
-        'parameters': {'limit': 1000},
-        'year': 2023
-    }
-]
-
-# Use with main.py
-python main.py --urban-endpoints /api/v1/schools/ccd/directory /api/v1/schools/ccd/enrollment
-```
-
-## Database Schema
-
-### census_data Table
-- `id`: Primary key
-- `zip_code`: ZIP code
-- `year`: Year of data
-- `total_pop_estimate`: Total population estimate
-- `hhi_150k_200k`: Household income $150K-$200K
-- `hhi_220k_plus`: Household income $220K+
-- `males_15_17`: Males aged 15-17
-- `females_15_17`: Females aged 15-17
-- `white_males_15_17`: White males aged 15-17
-- `black_males_15_17`: Black males aged 15-17
-- `hispanic_males_15_17`: Hispanic males aged 15-17
-- `white_females_15_17`: White females aged 15-17
-- `black_females_15_17`: Black females aged 15-17
-- `hispanic_females_15_17`: Hispanic females aged 15-17
-- `data_source`: Source identifier ('census')
-- `created_at`: Record creation timestamp
-- `updated_at`: Record update timestamp
+## 🗃️ Database Schema
 
 ### urban_institute_data Table
-- `id`: Primary key
-- `data_source`: Source identifier ('urban_institute')
-- `year`: Year of data
-- `endpoint`: API endpoint used
-- `data_json`: JSONB field containing all API response data
-- `created_at`: Record creation timestamp
-- `updated_at`: Record update timestamp
+```sql
+CREATE TABLE urban_institute_data (
+    id SERIAL PRIMARY KEY,
+    data_source VARCHAR(50) DEFAULT 'urban_institute',
+    endpoint VARCHAR(255),
+    year INTEGER,
+    data_json JSONB,
+    fetched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
 
-### locale_data Table
-- `id`: Primary key
-- `zip_code`: ZIP code (unique)
-- `state`: State name
-- `city`: City name
-- `created_at`: Record creation timestamp
-- `updated_at`: Record update timestamp
+**Indexes:**
+- `idx_urban_data_source`: On data_source column
+- `idx_urban_data_endpoint`: On endpoint column  
+- `idx_urban_data_year`: On year column
+- `idx_urban_data_json`: GIN index on JSONB data
 
-## Output Files
+### urban_institute_metadata Table
+```sql
+CREATE TABLE urban_institute_metadata (
+    id SERIAL PRIMARY KEY,
+    endpoint VARCHAR(255) UNIQUE,
+    last_fetched TIMESTAMP,
+    record_count INTEGER,
+    status VARCHAR(50),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
 
-- `census_data_multi.csv`: Census data backup
-- `urban_institute_data.csv`: Urban Institute data backup
-- `locale_data_multi.csv`: Location mapping backup
-- `multi_api_etl.log`: Detailed execution log
+## 🔧 Technical Implementation Details
 
-## Performance Features
+### Custom JSON Encoder
+The system includes a robust `TimestampEncoder` class that handles:
 
-### Async Processing
-- **Concurrent API Calls**: Multiple endpoints processed simultaneously
-- **Connection Pooling**: Efficient HTTP and database connection management
-- **Rate Limiting**: Intelligent rate limiting with semaphores
-- **Error Recovery**: Automatic retry logic with exponential backoff
-
-### Expected Performance Gains
-- **3-7x faster** API data retrieval through concurrent processing
-- **Reduced memory usage** for large datasets
-- **Better error handling** with automatic retries
-- **Improved scalability** for processing multiple APIs
-
-## Error Handling
-
-The system includes comprehensive error handling:
-
-- **API Rate Limiting**: Automatic delays between requests
-- **Database Connection**: Connection pooling and retry logic
-- **Data Validation**: Checks for missing or invalid data
-- **Async Error Recovery**: Automatic retry with exponential backoff
-- **Multi-Source Handling**: Independent error handling for each API
-
-## Monitoring and Logging
-
-- **Log File**: `multi_api_etl.log` contains detailed execution information
-- **Console Output**: Real-time progress updates
-- **Error Tracking**: Comprehensive error logging with stack traces
-- **Performance Metrics**: Built-in performance monitoring
-
-## Adding New Data Sources
-
-The system is designed to be easily extensible. To add a new data source:
-
-1. **Create a new DataSource class**:
 ```python
-class NewAPIDataSource(DataSource):
-    def __init__(self, config):
-        self.config = config
-        # Initialize your API client
-
-    async def fetch_data(self, request):
-        # Implement your API call logic
-        pass
-
-    def process_data(self, data):
-        # Implement your data processing logic
-        pass
+class TimestampEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, Timestamp):
+            return obj.isoformat()
+        elif pd.isna(obj) or (isinstance(obj, float) and str(obj) == 'nan'):
+            return None
+        return super().default(obj)
+    
+    def encode(self, obj):
+        # Pre-clean dictionaries to handle NaN values
+        if isinstance(obj, dict):
+            cleaned_obj = {}
+            for key, value in obj.items():
+                if pd.isna(value) or (isinstance(value, float) and str(value) == 'nan'):
+                    cleaned_obj[key] = None
+                elif isinstance(value, str) and value.lower() == 'nan':
+                    cleaned_obj[key] = None
+                else:
+                    cleaned_obj[key] = value
+            return super().encode(cleaned_obj)
+        return super().encode(obj)
 ```
 
-2. **Register the data source**:
-```python
-def _initialize_data_sources(self):
-    self.data_sources['census'] = CensusDataSource(self.config)
-    self.data_sources['urban'] = UrbanInstituteDataSource(self.config)
-    self.data_sources['new_api'] = NewAPIDataSource(self.config)  # Add this line
-```
+### Data Processing Pipeline
+1. **Data Extraction**: Concurrent API calls with rate limiting
+2. **Data Cleaning**: Automatic NaN handling and type conversion
+3. **JSON Serialization**: Custom encoder for complex data types
+4. **Database Insertion**: Batch processing with error handling
+5. **Metadata Updates**: Endpoint status and record counts
 
-3. **Update configuration**:
-```json
-{
-    "new_api": {
-        "api_key": "your_api_key",
-        "base_url": "https://api.example.com",
-        "endpoints": {
-            "data": "/v1/data"
-        }
-    }
-}
-```
+### Error Handling & Recovery
+- **Automatic Retries**: Exponential backoff for failed requests
+- **Data Validation**: Comprehensive type checking and conversion
+- **Graceful Degradation**: Fallback values for problematic data
+- **Detailed Logging**: Complete error context for debugging
 
-## Troubleshooting
+## 📊 Performance Features
 
-### Common Issues
+### Async Processing Benefits
+- **Concurrent API Calls**: 3-7x faster data retrieval
+- **Connection Pooling**: Efficient HTTP and database management
+- **Rate Limiting**: Intelligent request throttling
+- **Batch Processing**: Optimized database insertions
 
-1. **API Rate Limiting**
-   - Increase `rate_limit_delay` in config
-   - Reduce `max_concurrent_requests` for async version
-   - Check API key validity and limits
+### Memory Management
+- **Streaming Processing**: Large datasets processed in chunks
+- **Automatic Cleanup**: Resource management and disposal
+- **Efficient Data Structures**: Optimized pandas operations
 
-2. **Database Connection Issues**
-   - Check RDS endpoint and credentials
-   - Verify security group allows connections
-   - Ensure database exists and is accessible
+## 📝 Output Files
 
-3. **Urban Institute API Issues**
-   - Verify API key is valid
-   - Check endpoint URLs are correct
-   - Review API documentation for parameter requirements
+- **urban_institute_data.csv**: Urban Institute data backup
+- **census_raw_async.csv**: Census data backup
+- **urban_etl_async.log**: Detailed Urban Institute ETL log
+- **census_etl_async.log**: Detailed Census ETL log
+- **main_etl.log**: Main ETL execution log
 
-4. **Memory Issues**
-   - Reduce `batch_size` in config
-   - Process smaller year ranges
-   - Monitor system resources
+## 🐛 Troubleshooting
 
-5. **Async Performance Issues**
-   - Adjust `max_concurrent_requests` based on API limits
-   - Increase `batch_delay` if rate limiting occurs
-   - Monitor connection pool settings
+### Common Issues & Solutions
+
+#### 1. JSON Serialization Errors
+**Problem**: "Object of type Timestamp is not JSON serializable"
+**Solution**: The `TimestampEncoder` class automatically handles this
+
+#### 2. NaN Values in PostgreSQL
+**Problem**: "Token 'NaN' is invalid" in JSONB columns
+**Solution**: Automatic conversion of NaN to NULL during processing
+
+#### 3. Database Connection Issues
+**Problem**: Connection failures or timeouts
+**Solution**: Check database credentials and network connectivity
+
+#### 4. Memory Issues
+**Problem**: Out of memory errors with large datasets
+**Solution**: Reduce batch sizes in configuration
 
 ### Debug Mode
-
-Enable debug logging by modifying the logging configuration:
+Enable detailed logging by modifying the logging level:
 
 ```python
 logging.basicConfig(level=logging.DEBUG)
 ```
 
-## Security Considerations
+### Log Analysis
+Check log files for detailed error information:
+- `urban_etl_async.log`: Urban Institute ETL execution details
+- `census_etl_async.log`: Census ETL execution details
+- `main_etl.log`: Overall ETL process information
 
-- **API Key Management**: Store API keys securely
-- **AWS Secrets Manager**: Use for database credentials
-- **Connection Encryption**: SSL/TLS encryption for all connections
-- **Input Validation**: Data validation and sanitization
-- **Error Sanitization**: Sensitive information not logged
+## 🔒 Security Considerations
 
-## Contributing
+- **Credential Management**: Secure storage of database credentials
+- **API Security**: Rate limiting to prevent API abuse
+- **Data Validation**: Input sanitization and validation
+- **Connection Encryption**: SSL/TLS for database connections
+- **Error Sanitization**: No sensitive information in logs
+
+## 🧪 Testing & Validation
+
+The system has been extensively tested with:
+- **Real API Data**: Production Urban Institute and Census APIs
+- **Edge Cases**: NaN values, mixed data types, large datasets
+- **Error Scenarios**: Network failures, API errors, database issues
+- **Performance**: Load testing with concurrent requests
+
+## 📈 Monitoring & Logging
+
+### Log Levels
+- **INFO**: General execution information
+- **DEBUG**: Detailed debugging information
+- **WARNING**: Non-critical issues
+- **ERROR**: Error conditions with context
+
+### Performance Metrics
+- API response times
+- Database insertion rates
+- Memory usage
+- Error rates and types
+
+## 🚀 Future Enhancements
+
+- **Additional Data Sources**: Support for more APIs
+- **Real-time Processing**: Streaming data processing
+- **Advanced Analytics**: Built-in data analysis tools
+- **Web Dashboard**: Monitoring and control interface
+- **Cloud Deployment**: Docker and Kubernetes support
+
+## 🤝 Contributing
 
 1. Fork the repository
 2. Create a feature branch
-3. Make your changes
-4. Add tests if applicable
+3. Make your changes with comprehensive testing
+4. Update documentation
 5. Submit a pull request
 
-## License
+## 📄 License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+This project is licensed under the MIT License.
 
-## Support
+## 🆘 Support
 
 For issues and questions:
 1. Check the troubleshooting section
-2. Review the log files
-3. Verify API keys and endpoints
-4. Create an issue with detailed error information
+2. Review log files for error details
+3. Verify configuration settings
+4. Create an issue with complete error information
+
+## 📚 Additional Resources
+
+- **Urban Institute API**: https://educationdata.urban.org
+- **US Census Bureau**: https://www.census.gov/data/developers.html
+- **PostgreSQL Documentation**: https://www.postgresql.org/docs/
+- **SQLAlchemy Documentation**: https://docs.sqlalchemy.org/
+
+---
+
+**Last Updated**: August 2025  
+**Version**: 2.0 (Enhanced)  
+**Status**: Production Ready ✅
