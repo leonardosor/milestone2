@@ -20,16 +20,17 @@ Requirements:
 - asyncio
 """
 
+import argparse
+import asyncio
 import json
 import logging
-import pandas as pd
-import asyncio
-import aiohttp
-import argparse
-from sqlalchemy import create_engine, text
-from typing import Dict, Any, List, Set
-from datetime import datetime
 import sys
+from datetime import datetime
+from typing import Dict, Set
+
+import aiohttp
+import pandas as pd
+from sqlalchemy import create_engine, text
 
 # Configure logging
 logging.basicConfig(
@@ -489,9 +490,6 @@ class UrbanDataSplitter:
                 conn.execute(text(drop_sql))
                 conn.commit()
 
-                # Create column definitions for each JSON key
-                column_definitions = []
-
                 # Standard columns from original table
                 standard_columns = [
                     "id SERIAL PRIMARY KEY",
@@ -933,7 +931,6 @@ class UrbanDataSplitter:
                     text(f"SELECT * FROM {table_name} LIMIT 3")
                 )
                 sample_data = sample_result.fetchall()
-                sample_columns = [col[0] for col in columns]
 
                 logger.info(f"\nSample data (first 3 records):")
                 for i, record in enumerate(sample_data):

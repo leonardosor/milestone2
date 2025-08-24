@@ -56,7 +56,7 @@ This project provides a robust, production-ready ETL system that extracts data f
 ### 2. Urban Institute Education Data API
 - **Source**: https://educationdata.urban.org
 - **Data**: Education statistics, school information, enrollment data
-- **Endpoints**: 
+- **Endpoints**:
   - Schools directory: `/api/v1/schools/ccd/directory/{year}`
   - Enrollment data: `/api/v1/schools/ccd/enrollment/{year}/grade-12`
 - **Features**: No API key required, comprehensive data cleaning
@@ -180,7 +180,7 @@ import asyncio
 async def main():
     # Initialize ETL process
     etl = AsyncUrbanDataETL()
-    
+
     # Define endpoints to fetch
     urban_endpoints = [
         {
@@ -194,7 +194,7 @@ async def main():
             'year': 2023
         }
     ]
-    
+
     # Run ETL process
     await etl.run_etl_async(endpoints=urban_endpoints)
 
@@ -220,7 +220,7 @@ CREATE TABLE urban_institute_data (
 
 **Indexes:**
 - `idx_urban_data_source`: On data_source column
-- `idx_urban_data_endpoint`: On endpoint column  
+- `idx_urban_data_endpoint`: On endpoint column
 - `idx_urban_data_year`: On year column
 - `idx_urban_data_json`: GIN index on JSONB data
 
@@ -250,7 +250,7 @@ class TimestampEncoder(json.JSONEncoder):
         elif pd.isna(obj) or (isinstance(obj, float) and str(obj) == 'nan'):
             return None
         return super().default(obj)
-    
+
     def encode(self, obj):
         # Pre-clean dictionaries to handle NaN values
         if isinstance(obj, dict):
@@ -400,6 +400,6 @@ For issues and questions:
 
 ---
 
-**Last Updated**: August 2025  
-**Version**: 2.0 (Enhanced)  
+**Last Updated**: August 2025
+**Version**: 2.0 (Enhanced)
 **Status**: Production Ready ✅

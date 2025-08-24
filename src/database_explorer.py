@@ -16,11 +16,11 @@ Usage:
 """
 
 import os
-import sys
-import pandas as pd
-from sqlalchemy import create_engine, text, inspect, MetaData
-from dotenv import load_dotenv
 import warnings
+
+import pandas as pd
+from dotenv import load_dotenv
+from sqlalchemy import create_engine, text
 
 warnings.filterwarnings("ignore")
 

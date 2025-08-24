@@ -7,15 +7,16 @@ This script provides simplified ETL functionality for Census API data.
 Maintains logging and core functionality while being easier to debug.
 """
 
-import sys
-import logging
-import pandas as pd
-import censusdata
-import json
 import argparse
-from sqlalchemy import create_engine, text
-from datetime import datetime
+import json
+import logging
+import sys
 import traceback
+from datetime import datetime
+
+import censusdata
+import pandas as pd
+from sqlalchemy import create_engine, text
 
 # Configure logging
 logging.basicConfig(

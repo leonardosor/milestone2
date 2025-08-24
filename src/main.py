@@ -22,20 +22,19 @@ Requirements:
 - psycopg2-binary, pandas, sqlalchemy, aiohttp, requests, etc.
 """
 
-import sys
-import logging
-import json
-import os
 import argparse
 import asyncio
-import subprocess
-from typing import Any
+import json
+import logging
+import os
+import sys
 from datetime import datetime
+from typing import Any
 
 # Import modular components
 from census_data import SimpleCensusETL
-from urban_data import AsyncUrbanDataETL
 from location_data import fast_geocode_coordinates, test_geocoding_connection
+from urban_data import AsyncUrbanDataETL
 
 # Configure logging
 logging.basicConfig(
@@ -178,23 +177,21 @@ class OrchestatedETLController:
             if use_fast_method:
                 # Use the fast geocoding method (reverse-geocoder)
                 logger.info("🚀 Using fast offline geocoding method")
-                
+
                 # Test database connection first
                 if not test_geocoding_connection():
                     raise Exception("Database connection failed for fast location ETL")
-                
+
                 # Run fast geocoding
                 success = fast_geocode_coordinates(table_name)
                 if not success:
                     raise Exception("Fast geocoding process failed")
-                    
+
             else:
                 # Use the original API-based method (slower)
                 logger.info("⚠️  Using original API-based geocoding method (slower)")
-                
+
                 # Test database connection first
-                if not test_connection():
-                    raise Exception("Database connection failed for location ETL")
 
                 # Run location data processing
                 process_coordinates(
@@ -202,7 +199,7 @@ class OrchestatedETLController:
                     max_coordinates=max_coordinates,
                     table_name=table_name,
                 )
-                
+
             logger.info("✅ Location Data ETL process completed successfully")
             return True
 
@@ -260,8 +257,8 @@ class OrchestatedETLController:
                 )
                 logger.info("-" * 40)
                 self.run_location_etl(
-                    location_batch_size, 
-                    location_max_coords, 
+                    location_batch_size,
+                    location_max_coords,
                     location_table_name,
                     use_fast_method=use_fast_geocoding,
                 )
