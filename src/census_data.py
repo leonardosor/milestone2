@@ -22,7 +22,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s",
     handlers=[
-        logging.FileHandler("./logs/census_etl_simple.log", encoding='utf-8'),
+        logging.FileHandler("./logs/census_etl_simple.log", encoding="utf-8"),
         logging.StreamHandler(sys.stdout),
     ],
 )
@@ -45,7 +45,9 @@ class SimpleCensusETL:
             logger.info("Configuration loaded successfully")
             return config
         except FileNotFoundError:
-            logger.warning(f"Configuration file {config_file} not found, using defaults")
+            logger.warning(
+                f"Configuration file {config_file} not found, using defaults"
+            )
             return {
                 "local_database": {
                     "host": "localhost",
@@ -64,12 +66,15 @@ class SimpleCensusETL:
         try:
             # Always use local database for simplicity
             db_creds = self.config.get("local_database", {})
-            
+
             if not db_creds or not all(
-                key in db_creds for key in ["host", "port", "database", "username", "password"]
+                key in db_creds
+                for key in ["host", "port", "database", "username", "password"]
             ):
                 logger.error("Incomplete local database configuration")
-                raise ValueError("Local database configuration is incomplete. Please check config.json")
+                raise ValueError(
+                    "Local database configuration is incomplete. Please check config.json"
+                )
 
             connection_string = (
                 f"postgresql://{db_creds['username']}:{db_creds['password']}"
@@ -86,8 +91,12 @@ class SimpleCensusETL:
 
         except Exception as e:
             logger.error(f"❌ Failed to connect to database: {e}")
-            logger.error(f"Connection string template: postgresql://username:password@host:port/database")
-            logger.error(f"Check that PostgreSQL is running and credentials are correct")
+            logger.error(
+                f"Connection string template: postgresql://username:password@host:port/database"
+            )
+            logger.error(
+                f"Check that PostgreSQL is running and credentials are correct"
+            )
             raise
 
     def create_tables(self):
@@ -95,11 +104,11 @@ class SimpleCensusETL:
         try:
             with self.engine.connect() as conn:
                 logger.info("🗄️ Creating database tables...")
-                
+
                 # Drop existing table
                 drop_sql = "DROP TABLE IF EXISTS census_data CASCADE;"
                 conn.execute(text(drop_sql))
-                
+
                 # Create new table
                 create_sql = """
                 CREATE TABLE census_data (
@@ -122,11 +131,15 @@ class SimpleCensusETL:
                 );
                 """
                 conn.execute(text(create_sql))
-                
+
                 # Create indexes
-                conn.execute(text("CREATE INDEX idx_census_zip_year ON census_data(zip_code, year);"))
+                conn.execute(
+                    text(
+                        "CREATE INDEX idx_census_zip_year ON census_data(zip_code, year);"
+                    )
+                )
                 conn.execute(text("CREATE INDEX idx_census_year ON census_data(year);"))
-                
+
                 conn.commit()
                 logger.info("✅ Database tables created successfully")
 
@@ -142,7 +155,7 @@ class SimpleCensusETL:
             # Define census variables
             census_variables = {
                 "B01003_001E": "total_pop",
-                "B19001_016E": "hhi_150k_200k", 
+                "B19001_016E": "hhi_150k_200k",
                 "B19001_017E": "hhi_220k_plus",
                 "B01001_006E": "males_15_17",
                 "B01001_030E": "females_15_17",
@@ -170,30 +183,34 @@ class SimpleCensusETL:
 
             # Clean up the data
             census_data.reset_index(inplace=True)
-            
+
             # Extract zip codes from CensusGeo objects
             census_data["zip_code"] = census_data["index"].apply(
-                lambda x: x.params()[0][1] if hasattr(x, "params") and x.params() else str(x)
+                lambda x: x.params()[0][1]
+                if hasattr(x, "params") and x.params()
+                else str(x)
             )
-            
+
             # Rename columns to simplified names
             for old_name, new_name in census_variables.items():
                 if old_name in census_data.columns:
                     census_data.rename(columns={old_name: new_name}, inplace=True)
-            
+
             # Add metadata
             census_data["year"] = year
             census_data["data_source"] = "census_api"
-            
+
             # Drop the index column
-            census_data.drop(columns=["index"], inplace=True, errors='ignore')
-            
+            census_data.drop(columns=["index"], inplace=True, errors="ignore")
+
             # Fill NaN values with 0
             for col in census_data.columns:
-                if col not in ['zip_code', 'year', 'data_source']:
+                if col not in ["zip_code", "year", "data_source"]:
                     census_data[col] = census_data[col].fillna(0)
-            
-            logger.info(f"✅ Successfully fetched {len(census_data)} records for year {year}")
+
+            logger.info(
+                f"✅ Successfully fetched {len(census_data)} records for year {year}"
+            )
             return census_data
 
         except Exception as e:
@@ -209,16 +226,16 @@ class SimpleCensusETL:
                 return 0
 
             logger.info(f"💾 Inserting {len(data)} records into database...")
-            
+
             # Use pandas to_sql for simplicity
             records_inserted = data.to_sql(
-                'census_data', 
-                self.engine, 
-                if_exists='append', 
+                "census_data",
+                self.engine,
+                if_exists="append",
                 index=False,
-                method='multi'
+                method="multi",
             )
-            
+
             logger.info(f"✅ Successfully inserted {len(data)} records")
             return len(data)
 
@@ -234,7 +251,7 @@ class SimpleCensusETL:
                 logger.warning("⚠️ No data to save to CSV")
                 return
 
-            data.to_csv(f"./outputs/{filename}", index=False, encoding='utf-8')
+            data.to_csv(f"./outputs/{filename}", index=False, encoding="utf-8")
             logger.info(f"✅ Data saved to ./outputs/{filename}")
 
         except Exception as e:
@@ -250,7 +267,9 @@ class SimpleCensusETL:
         try:
             logger.info("=" * 60)
             logger.info(f"🚀 STARTING SIMPLIFIED CENSUS ETL PROCESS")
-            logger.info(f"📅 Processing years: {begin_year} to {end_year} ({total_years} years)")
+            logger.info(
+                f"📅 Processing years: {begin_year} to {end_year} ({total_years} years)"
+            )
             logger.info(f"⏰ Started at: {start_time.strftime('%Y-%m-%d %H:%M:%S')}")
             logger.info("=" * 60)
 
@@ -266,11 +285,13 @@ class SimpleCensusETL:
             logger.info("📥 Step 3/4: Fetching and inserting Census data...")
             for i, year in enumerate(range(begin_year, end_year + 1)):
                 progress = (i + 1) / total_years * 100
-                logger.info(f"Processing year {year} ({i+1}/{total_years}) - {progress:.1f}%")
-                
+                logger.info(
+                    f"Processing year {year} ({i+1}/{total_years}) - {progress:.1f}%"
+                )
+
                 # Fetch data for this year
                 year_data = self.fetch_census_data(year)
-                
+
                 if not year_data.empty:
                     # Insert into database
                     inserted = self.insert_data_to_db(year_data)
@@ -284,11 +305,11 @@ class SimpleCensusETL:
             if all_data:
                 consolidated_data = pd.concat(all_data, ignore_index=True)
                 self.save_to_csv(consolidated_data, "census_data_consolidated.csv")
-            
+
             # Final summary
             end_time = datetime.now()
             duration = end_time - start_time
-            
+
             logger.info("=" * 60)
             logger.info(f"🎉 CENSUS ETL PROCESS COMPLETED SUCCESSFULLY!")
             logger.info(f"⏱️ Total duration: {duration}")
@@ -315,21 +336,29 @@ class SimpleCensusETL:
 def main():
     """Main function to run the ETL process"""
     parser = argparse.ArgumentParser(description="Simplified Census ETL Process")
-    parser.add_argument("--begin-year", type=int, required=True, help="Start year for Census data fetch")
-    parser.add_argument("--end-year", type=int, required=True, help="End year for Census data fetch")
-    parser.add_argument("--config", type=str, default="config.json", help="Configuration file path")
-    parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose logging")
+    parser.add_argument(
+        "--begin-year", type=int, required=True, help="Start year for Census data fetch"
+    )
+    parser.add_argument(
+        "--end-year", type=int, required=True, help="End year for Census data fetch"
+    )
+    parser.add_argument(
+        "--config", type=str, default="config.json", help="Configuration file path"
+    )
+    parser.add_argument(
+        "--verbose", "-v", action="store_true", help="Enable verbose logging"
+    )
     args = parser.parse_args()
-    
+
     if args.verbose:
         logging.getLogger().setLevel(logging.DEBUG)
         logger.info("🔍 Verbose logging enabled")
-    
+
     try:
         logger.info("🚀 Initializing Simplified Census ETL process...")
         logger.info(f"📅 Year range: {args.begin_year} to {args.end_year}")
         logger.info(f"⚙️ Config file: {args.config}")
-        
+
         etl = SimpleCensusETL(config_file=args.config)
         logger.info("✅ ETL process initialized successfully")
 
@@ -340,28 +369,28 @@ def main():
 
     except Exception as e:
         logger.error(f"💥 Simplified Census ETL process failed: {e}")
-        
+
         # Provide helpful suggestions
         if "connection" in str(e).lower() or "database" in str(e).lower():
-            logger.error("\n" + "="*60)
+            logger.error("\n" + "=" * 60)
             logger.error("🗄️ DATABASE CONNECTION ERROR")
-            logger.error("="*60)
+            logger.error("=" * 60)
             logger.error("💡 Recommendations:")
             logger.error("1. Check if PostgreSQL is running")
             logger.error("2. Verify database credentials in config.json")
             logger.error("3. Ensure database 'milestone2' exists")
             logger.error("4. Check if user 'postgres' has proper permissions")
-            logger.error("="*60)
+            logger.error("=" * 60)
         elif "census" in str(e).lower() or "api" in str(e).lower():
-            logger.error("\n" + "="*60)
+            logger.error("\n" + "=" * 60)
             logger.error("🌐 CENSUS API ERROR")
-            logger.error("="*60)
+            logger.error("=" * 60)
             logger.error("💡 Recommendations:")
             logger.error("1. Check your internet connection")
             logger.error("2. Try a different year range")
             logger.error("3. The Census API may be temporarily down")
-            logger.error("="*60)
-        
+            logger.error("=" * 60)
+
         sys.exit(1)
 
 
