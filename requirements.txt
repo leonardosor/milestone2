@@ -6,3 +6,8 @@ pandas==2.0.3
 sqlalchemy==2.0.20
 aiohttp==3.8.5
 backoff==2.2.1
+geopy==2.4.0  # Added for reverse geocoding functionality
+jupyter==1.0.0
+python-dotenv==1.0.0
+openpyxl==3.1.2
+pyarrow==14.0.2
