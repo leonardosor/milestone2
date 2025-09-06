@@ -1,5 +1,0 @@
-.env
-*.log
-*.csv
-*.pyc
-config.json

@@ -1,0 +1,94 @@
+version: 2
+
+sources:
+  - name: raw_data
+    description: Raw data tables from ETL pipeline
+    schema: public
+    tables:
+      - name: census_data
+        description: Census demographic and economic data
+        columns:
+          - name: state
+            description: State abbreviation
+          - name: county
+            description: County name
+          - name: zip
+            description: ZIP code
+
+      - name: urban_data_directory
+        description: Urban Institute school directory data
+        columns:
+          - name: latitude
+            description: School latitude
+          - name: longitude
+            description: School longitude
+          - name: city_mailing
+            description: School mailing city
+          - name: county
+            description: School county
+          - name: state
+            description: School state
+          - name: zip_mailing
+            description: School mailing ZIP code
+          - name: leaid
+            description: Local Education Agency ID
+          - name: ncessch
+            description: NCES school ID
+          - name: school_name
+            description: School name
+          - name: school_status
+            description: School operational status
+          - name: school_type
+            description: Type of school
+          - name: enrollment
+            description: Student enrollment count
+          - name: year
+            description: Data year
+
+      - name: urban_data_expanded
+        description: Urban Institute school assessment data
+        columns:
+          - name: lea_name
+            description: Local Education Agency name
+          - name: leaid
+            description: Local Education Agency ID
+          - name: ncessch
+            description: NCES school ID
+          - name: year
+            description: Data year
+          - name: econ_disadvantaged
+            description: Economically disadvantaged indicator
+          - name: enrollment
+            description: Student enrollment count
+          - name: grade
+            description: Grade level
+          - name: math_test_num_valid
+            description: Number of valid math test scores
+          - name: math_test_pct_prof_high
+            description: High estimate of math proficiency percentage
+          - name: math_test_pct_prof_low
+            description: Low estimate of math proficiency percentage
+          - name: math_test_pct_prof_midpt
+            description: Midpoint estimate of math proficiency percentage
+          - name: migrant
+            description: Migrant student indicator
+          - name: race
+            description: Student race/ethnicity
+          - name: read_test_num_valid
+            description: Number of valid reading test scores
+          - name: read_test_pct_prof_high
+            description: High estimate of reading proficiency percentage
+          - name: read_test_pct_prof_low
+            description: Low estimate of reading proficiency percentage
+          - name: read_test_pct_prof_midpt
+            description: Midpoint estimate of reading proficiency percentage
+          - name: sex
+            description: Student gender
+
+      - name: location_data
+        description: Geographic location reference data
+        columns:
+          - name: latitude
+            description: Latitude coordinate
+          - name: longitude
+            description: Longitude coordinate
