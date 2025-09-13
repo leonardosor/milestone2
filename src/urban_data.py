@@ -1,1275 +1,549 @@
 #!/usr/bin/env python3
-"""
-Urban Institute Data ETL and Column Splitter
-===========================================
+"""Urban Institute ETL (one raw table + one expanded table per endpoint)
 
-This script provides both ETL functionality to fetch data from Urban Institute API
-and splitting functionality to convert JSONB columns into separate tables.
+Process:
+1. Reads endpoints from config.json (urban.endpoints).
+2. Ingests each endpoint/year into its own *raw* table:
+       <schema>.urban_<endpoint_key_sanitized>
+   Columns:
+       id SERIAL PK
+       year INTEGER NOT NULL
+       data_json JSONB NOT NULL (raw record)
+       data_hash VARCHAR(64) UNIQUE (sha256(endpoint_key + year + json))
+       fetched_at TIMESTAMP DEFAULT now()
+   Indexes: year (btree), data_json (GIN), data_hash (btree)
+   Dedup via ON CONFLICT (data_hash) DO NOTHING.
 
-Features:
-- Fetch data from Urban Institute API endpoints
-- Create base urban_institute_data table
-- Split JSONB data into separate directory and endpoint tables
-- Async processing for better performance
+3. (Optional) Builds an *expanded* table for each endpoint individually that flattens
+   scalar JSON keys into TEXT columns:
+       <schema>.urban_<endpoint_key_sanitized>_<suffix> (suffix default: expanded)
+   Columns:
+       id SERIAL PK
+       year INTEGER
+       fetched_at TIMESTAMP
+       one TEXT column per distinct JSON key present in that endpoint's raw JSON records
 
-Requirements:
-- psycopg2-binary
-- pandas
-- sqlalchemy
-- aiohttp
-- asyncio
+Flags:
+    --drop-existing    : Drop per-endpoint raw tables before ingest
+    --skip-expand      : Skip creating per-endpoint expanded tables
+    --expanded-suffix  : Suffix appended to each expanded table name (default: expanded)
+
+Notes / Limitations:
+    - Only scalar (textifiable) JSON values are extracted (json ->> key). Non-scalars become NULL.
+    - Key name collisions within a single endpoint are disambiguated with _<n> suffix.
+    - Different endpoints may yield different column sets; there is no unified wide table.
 """
 
 import argparse
 import asyncio
 import json
 import logging
+import os
 import sys
+import hashlib
 from datetime import datetime
-from typing import Dict, Set
+from typing import Dict, List
+from contextlib import nullcontext
 
 import aiohttp
-import pandas as pd
+import backoff
 from sqlalchemy import create_engine, text
 
-# Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s",
-    handlers=[
-        logging.StreamHandler(sys.stdout),
-    ],
+    handlers=[logging.StreamHandler(sys.stdout)],
 )
 logger = logging.getLogger(__name__)
 
+try:  # wake lock (optional)
+    from wakepy import keep  # type: ignore
+except ImportError:
+    logger.error("wakepy is required. Install it with: pip install wakepy")
+    sys.exit(1)
 
-class AsyncUrbanDataETL:
-    """Async ETL class for fetching Urban Institute data"""
+DB_SCHEMA = None  # set after config load
 
-    def __init__(self, config_file="config.json", drop_existing_tables=False):
-        """Initialize the Urban Institute ETL process"""
-        self.config = self._load_config(config_file)
-        self.engine = None
-        self.session = None
-        self.drop_existing_tables = drop_existing_tables
 
-    def _load_config(self, config_file):
-        """Load configuration from JSON file"""
+def load_config(config_file: str) -> Dict:
+    global DB_SCHEMA
+    search = []
+    if os.path.isabs(config_file):
+        search.append(config_file)
+    else:
+        cwd = os.getcwd()
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        search.extend([
+            os.path.join(cwd, config_file),
+            os.path.join(script_dir, config_file),
+            os.path.join(os.path.dirname(script_dir), config_file),
+        ])
+    last_err = None
+    for p in search:
         try:
-            with open(config_file, "r") as f:
-                config = json.load(f)
-            logger.info("Configuration loaded successfully")
-            return config
-        except FileNotFoundError:
-            logger.error(f"Configuration file {config_file} not found")
-            raise
+            if os.path.exists(p):
+                with open(p, 'r', encoding='utf-8') as f:
+                    cfg = json.load(f)
+                DB_SCHEMA = cfg.get('schema')
+                if not DB_SCHEMA:
+                    raise ValueError("Missing 'schema' in config.json")
+                logger.info(f"Loaded config from {p}")
+                return cfg
         except json.JSONDecodeError as e:
-            logger.error(f"Invalid JSON in configuration file: {e}")
+            logger.error(f"Invalid JSON in {p}: {e}")
             raise
-
-    def connect_to_database(self):
-        """Establish connection to PostgreSQL database"""
-        try:
-            db_creds = self.config.get("local_database", {})
-
-            connection_string = (
-                f"postgresql://{db_creds['username']}:{db_creds['password']}"
-                f"@{db_creds['host']}:{db_creds['port']}/{db_creds['database']}"
-            )
-
-            self.engine = create_engine(
-                connection_string,
-                pool_size=10,
-                max_overflow=20,
-                pool_pre_ping=True,
-                pool_recycle=3600,
-            )
-
-            # Test connection
-            with self.engine.connect() as conn:
-                conn.execute(text("SELECT 1"))
-
-            logger.info("Database connection established successfully")
-
         except Exception as e:
-            logger.error(f"Failed to connect to database: {e}")
-            raise
+            last_err = e
+    logger.error('Configuration file not found. Tried: ' + ', '.join(search))
+    if last_err:
+        raise last_err
+    raise FileNotFoundError(config_file)
 
-    def create_tables(self):
-        """Create the urban_institute_data table"""
+
+def sanitize_identifier(name: str) -> str:
+    safe = ''.join(ch if ch.isalnum() or ch == '_' else '_' for ch in name)
+    while '__' in safe:
+        safe = safe.replace('__', '_')
+    if safe and safe[0].isdigit():
+        safe = f't_{safe}'
+    return safe.lower()
+
+
+class EndpointTableManager:
+    def __init__(self, engine, drop_existing: bool = False):
+        self.engine = engine
+        self._created: set[str] = set()
+        self._drop_existing = drop_existing
+
+    def ensure_schema(self):
+        with self.engine.connect() as conn:
+            conn.execute(text(f"CREATE SCHEMA IF NOT EXISTS {DB_SCHEMA};"))
+            conn.commit()
+
+    def ensure_table(self, endpoint_key: str, table_name: str | None = None):
+        if endpoint_key in self._created:
+            return
+        table = table_name or f"urban_{sanitize_identifier(endpoint_key)}"
+        drop_sql = f"DROP TABLE IF EXISTS {DB_SCHEMA}.{table};" if self._drop_existing else ""
+        create_sql = f"""
+        CREATE TABLE IF NOT EXISTS {DB_SCHEMA}.{table} (
+            id SERIAL PRIMARY KEY,
+            year INTEGER NOT NULL,
+            data_json JSONB NOT NULL,
+            data_hash VARCHAR(64) UNIQUE,
+            fetched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_{table}_year ON {DB_SCHEMA}.{table}(year);
+        CREATE INDEX IF NOT EXISTS idx_{table}_json ON {DB_SCHEMA}.{table} USING GIN(data_json);
+        CREATE INDEX IF NOT EXISTS idx_{table}_hash ON {DB_SCHEMA}.{table}(data_hash);
+        """
+        with self.engine.connect() as conn:
+            if drop_sql:
+                conn.execute(text(drop_sql))
+            conn.execute(text(create_sql))
+            conn.commit()
+        logger.info(f"Table ready: {DB_SCHEMA}.{table}")
+        self._created.add(endpoint_key)
+
+    def bulk_insert(self, endpoint_key: str, records: List[dict], table_name: str | None = None):
+        if not records:
+            return 0
+        table = table_name or f"urban_{sanitize_identifier(endpoint_key)}"
+        insert_sql = text(f"""
+            INSERT INTO {DB_SCHEMA}.{table} (year, data_json, data_hash, fetched_at)
+            VALUES (:year, CAST(:data_json AS JSONB), :data_hash, :fetched_at)
+            ON CONFLICT (data_hash) DO NOTHING
+        """)
+        with self.engine.connect() as conn:
+            result = conn.execute(insert_sql, records)
+            conn.commit()
+        return result.rowcount if hasattr(result, 'rowcount') else 0
+
+
+class EndpointETL:
+    def __init__(self, config: Dict, drop_existing: bool = False):
+        self.config = config
+        db = config.get('local_database', {})
+        conn_str = (
+            f"postgresql://{db['username']}:{db['password']}@{db['host']}:{db['port']}/{db['database']}"
+        )
+        self.engine = create_engine(
+            conn_str,
+            pool_size=10,
+            max_overflow=20,
+            pool_pre_ping=True,
+            pool_recycle=3600,
+        )
+        with self.engine.connect() as conn:
+            conn.execute(text('SELECT 1'))
+        # Initialize table manager (supports optional dropping of existing tables)
+        self.tables = EndpointTableManager(self.engine, drop_existing=drop_existing)
+        self.tables.ensure_schema()
+        # Precompute endpoint template mapping
+        self.urban_cfg = self.config.get('urban', {})
+        self.endpoint_templates: Dict[str, str] = self.urban_cfg.get('endpoints', {})
+        self.raw_table_names: Dict[str, str] = {}
+        self._assign_table_names()
+
+    def _assign_table_names(self):
+        used: set[str] = set()
+        for key, template in self.endpoint_templates.items():
+            name = self._derive_table_name_from_template(template, key)
+            base = name
+            i = 1
+            while name in used:
+                name = f"{base}_{i}"
+                i += 1
+            used.add(name)
+            self.raw_table_names[key] = name
+
+    @staticmethod
+    def _derive_table_name_from_template(template: str, fallback_key: str) -> str:
+        """Derive a concise table name from an endpoint template path.
+
+        Rules:
+          - Remove leading / and split by '/'
+          - Drop generic segments: api, v1, schools
+          - Drop path params like {year}
+          - Keep up to last 5 meaningful segments
+          - Replace hyphens with underscores
+          - Prefix with 'urban_' and truncate to <= 55 chars (Postgres limit 63 incl schema)
+          - Fallback to sanitized key if result empty
+        """
+        segs = [s for s in template.strip('/').split('/') if s]
+        filtered: list[str] = []
+        for s in segs:
+            low = s.lower()
+            if low in {"api", "v1", "schools"}:
+                continue
+            if low.startswith('{') and low.endswith('}'):
+                continue
+            filtered.append(low.replace('-', '_'))
+        if not filtered:
+            filtered = [sanitize_identifier(fallback_key)]
+        # limit segments length for very long names
+        if len(filtered) > 5:
+            filtered = filtered[-5:]
+        candidate = 'urban_' + '_'.join(filtered)
+        # compress overly long segments if necessary
+        if len(candidate) > 55:
+            short_parts = []
+            for part in filtered:
+                if len(part) > 12:
+                    short_parts.append(part[:8])
+                else:
+                    short_parts.append(part)
+            candidate = 'urban_' + '_'.join(short_parts)
+        if len(candidate) > 60:
+            candidate = candidate[:60]
+        return sanitize_identifier(candidate)
+
+    @staticmethod
+    def _giveup(e):  # pragma: no cover
+        return isinstance(e, aiohttp.ClientResponseError) and 400 <= e.status < 500 and e.status not in (429,)
+
+    @backoff.on_exception(
+        backoff.expo,
+        (aiohttp.ClientError, asyncio.TimeoutError, aiohttp.ClientResponseError),
+        max_tries=5,
+        giveup=_giveup,
+        jitter=backoff.full_jitter,
+    )
+    async def _fetch_page(self, session: aiohttp.ClientSession, url: str):
+        async with session.get(url) as resp:
+            if resp.status != 200:
+                raise aiohttp.ClientResponseError(
+                    request_info=resp.request_info,
+                    history=resp.history,
+                    status=resp.status,
+                    message=f"Status {resp.status}",
+                )
+            return await resp.json()
+
+    async def _fetch_all(self, session, base_url: str, endpoint_template: str, year: int, page_delay: float, max_pages: int | None) -> list:
+        ep = endpoint_template.format(year=year)
+        url = f"{base_url}{ep}"
+        results = []
+        page = 0
+        next_url = url
+        while next_url and (max_pages is None or page < max_pages):
+            page += 1
+            try:
+                data = await self._fetch_page(session, next_url)
+            except Exception as e:
+                logger.error(f"Failed {ep} page {page}: {e}")
+                break
+            page_results = data.get('results', [])
+            results.extend(page_results)
+            if page == 1:
+                logger.info(f"{ep} {year}: page {page} -> {len(page_results)} records")
+            else:
+                logger.debug(f"{ep} {year}: page {page} -> {len(page_results)} (cumulative {len(results)})")
+            nxt = data.get('next')
+            if nxt:
+                next_url = nxt if nxt.startswith('http') else f"{base_url.rstrip('/')}/{nxt.lstrip('/')}"
+                await asyncio.sleep(page_delay)
+            else:
+                next_url = None
+        return results
+
+    async def ingest(self,
+                     begin_year: int,
+                     end_year: int,
+                     endpoint_subset: List[str] | None,
+                     max_concurrency: int,
+                     page_delay: float,
+                     flush_threshold: int) -> Dict:
+        urban_cfg = self.urban_cfg
+        base_url = urban_cfg.get('base_url', '')
+        endpoints_map: Dict[str, str] = self.endpoint_templates.copy()
+        if endpoint_subset:
+            missing = [e for e in endpoint_subset if e not in endpoints_map]
+            if missing:
+                raise ValueError(f"Endpoint keys not found in config: {missing}")
+            endpoints_map = {k: v for k, v in endpoints_map.items() if k in endpoint_subset}
+            # filter table name mapping accordingly
+            self.raw_table_names = {k: v for k, v in self.raw_table_names.items() if k in endpoints_map}
+
+        pagination_cfg = urban_cfg.get('pagination', {})
+        max_pages = pagination_cfg.get('max_pages_per_endpoint')
+
+        semaphore = asyncio.Semaphore(max_concurrency)
+        queue: asyncio.Queue = asyncio.Queue(maxsize=flush_threshold * 2)
+        total_inserted = 0
+        total_seen = 0
+
         try:
-            with self.engine.connect() as conn:
-                if self.drop_existing_tables:
-                    # Drop existing table if it exists
-                    conn.execute(
-                        text("DROP TABLE IF EXISTS urban_institute_data CASCADE;")
-                    )
-                    logger.info("Dropped existing urban_institute_data table")
+            import orjson  # type: ignore
+            def dumps(obj):
+                return orjson.dumps(obj).decode()
+        except Exception:  # pragma: no cover
+            def dumps(obj):
+                return json.dumps(obj)
 
-                # Create the main table as documented
-                create_sql = """
-                CREATE TABLE IF NOT EXISTS urban_institute_data (
-                    id SERIAL PRIMARY KEY,
-                    data_source VARCHAR(50) DEFAULT 'urban_institute',
-                    endpoint VARCHAR(255),
-                    year INTEGER,
-                    data_json JSONB,
-                    fetched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                );
+        async def writer():
+            nonlocal total_inserted
+            buffer_per_endpoint: Dict[str, list] = {}
+            while True:
+                item = await queue.get()
+                if item is None:
+                    break
+                ep_key = item['endpoint_key']
+                buffer_per_endpoint.setdefault(ep_key, []).append(item)
+                if len(buffer_per_endpoint[ep_key]) >= flush_threshold:
+                    self.tables.ensure_table(ep_key, self.raw_table_names[ep_key])
+                    inserted = self.tables.bulk_insert(ep_key, [
+                        {
+                            'year': r['year'],
+                            'data_json': r['data_json'],
+                            'data_hash': r['data_hash'],
+                            'fetched_at': r['fetched_at'],
+                        } for r in buffer_per_endpoint[ep_key]
+                    ], table_name=self.raw_table_names[ep_key])
+                    total_inserted += inserted
+                    buffer_per_endpoint[ep_key].clear()
+            for ep_key, buf in buffer_per_endpoint.items():
+                if buf:
+                    self.tables.ensure_table(ep_key, self.raw_table_names[ep_key])
+                    inserted = self.tables.bulk_insert(ep_key, [
+                        {
+                            'year': r['year'],
+                            'data_json': r['data_json'],
+                            'data_hash': r['data_hash'],
+                            'fetched_at': r['fetched_at'],
+                        } for r in buf
+                    ], table_name=self.raw_table_names[ep_key])
+                    total_inserted += inserted
+            logger.info(f"Writer finished. Total inserted (unique): {total_inserted}")
 
-                -- Create indexes
-                CREATE INDEX IF NOT EXISTS idx_urban_data_source ON urban_institute_data(data_source);
-                CREATE INDEX IF NOT EXISTS idx_urban_data_endpoint ON urban_institute_data(endpoint);
-                CREATE INDEX IF NOT EXISTS idx_urban_data_year ON urban_institute_data(year);
-                CREATE INDEX IF NOT EXISTS idx_urban_data_json ON urban_institute_data USING GIN(data_json);
-                """
-
-                conn.execute(text(create_sql))
-                conn.commit()
-                logger.info("Successfully created urban_institute_data table")
-
-        except Exception as e:
-            logger.error(f"Failed to create tables: {e}")
-            raise
-
-    async def fetch_data_from_api(self, endpoint_template, year, params=None):
-        """Fetch data from Urban Institute API"""
-        if params is None:
-            params = {}
-
-        base_url = self.config.get("urban", {}).get("base_url", "")
-        endpoint = endpoint_template.format(year=year)
-        url = f"{base_url}{endpoint}"
-
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url, params=params) as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        logger.info(
-                            f"Successfully fetched data from {endpoint} for year {year}"
-                        )
-                        return data
-                    else:
-                        logger.error(
-                            f"API request failed for {endpoint}: {response.status}"
-                        )
-                        return None
-        except Exception as e:
-            logger.error(f"Error fetching data from {endpoint}: {e}")
-            return None
-
-    async def insert_data_batch(self, data_batch):
-        """Insert a batch of data into the database"""
-        try:
-            if not data_batch:
+        async def process(ep_key: str, template: str, year: int, session: aiohttp.ClientSession):
+            nonlocal total_seen
+            async with semaphore:
+                records = await self._fetch_all(session, base_url, template, year, page_delay, max_pages)
+            if not records:
                 return
+            now = datetime.utcnow()
+            for rec in records:
+                json_text = dumps(rec)
+                data_hash = hashlib.sha256(f"{ep_key}_{year}_{json_text}".encode('utf-8')).hexdigest()
+                await queue.put({
+                    'endpoint_key': ep_key,
+                    'year': year,
+                    'data_json': json_text,
+                    'data_hash': data_hash,
+                    'fetched_at': now,
+                })
+            total_seen += len(records)
+            logger.info(f"Queued {len(records)} rows for {ep_key} {year} (cumulative seen {total_seen})")
 
-            df = pd.DataFrame(data_batch)
-            with self.engine.connect() as conn:
-                df.to_sql(
-                    "urban_institute_data",
-                    conn,
-                    if_exists="append",
-                    index=False,
-                    method="multi",
-                )
-                conn.commit()
-                logger.info(f"Inserted batch of {len(data_batch)} records")
-
-        except Exception as e:
-            logger.error(f"Failed to insert data batch: {e}")
-            raise
-
-    async def run_etl_async(self, begin_year=None, end_year=None, endpoints=None):
-        """Run the complete ETL process"""
-        start_time = datetime.now()
-
-        try:
-            logger.info("=" * 80)
-            logger.info("STARTING URBAN INSTITUTE ETL PROCESS")
-            logger.info("=" * 80)
-
-            # Step 1: Connect to database
-            logger.info("Step 1/5: Connecting to database...")
-            self.connect_to_database()
-
-            # Step 2: Create tables
-            logger.info("Step 2/5: Creating tables...")
-            self.create_tables()
-
-            # Step 3: Fetch data from API
-            logger.info("Step 3/5: Fetching data from Urban Institute API...")
-
-            # Use default years if not provided
-            if begin_year is None:
-                begin_year = 2020
-            if end_year is None:
-                end_year = 2023
-
-            # Use default endpoints if not provided
-            if endpoints is None:
-                endpoints_config = self.config.get("urban", {}).get("endpoints", {})
-                endpoints = list(endpoints_config.values())
-
-            data_batch = []
-            total_records = 0
-
+        timeout = aiohttp.ClientTimeout(total=None)
+        headers = {"Accept-Encoding": "gzip, deflate", "User-Agent": "UrbanEndpointETL/1.0"}
+        writer_task = asyncio.create_task(writer())
+        async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
+            tasks = []
             for year in range(begin_year, end_year + 1):
-                for endpoint_template in endpoints:
-                    logger.info(f"Fetching data for {endpoint_template} - year {year}")
+                for ep_key, template in endpoints_map.items():
+                    tasks.append(asyncio.create_task(process(ep_key, template, year, session)))
+            await asyncio.gather(*tasks)
+        await queue.put(None)
+        await writer_task
+        stats = {
+            'rows_seen': total_seen,
+            'rows_inserted': total_inserted,
+            'endpoint_tables': [f"{DB_SCHEMA}.{self.raw_table_names[k]}" for k in endpoints_map.keys()],
+            'endpoint_keys': list(endpoints_map.keys()),
+        }
+        return stats
 
-                    data = await self.fetch_data_from_api(endpoint_template, year)
-                    if data and "results" in data:
-                        for record in data["results"]:
-                            data_batch.append(
-                                {
-                                    "data_source": "urban_institute",
-                                    "endpoint": endpoint_template,
-                                    "year": year,
-                                    "data_json": json.dumps(record),
-                                    "fetched_at": datetime.now(),
-                                    "created_at": datetime.now(),
-                                    "updated_at": datetime.now(),
-                                }
-                            )
+    # ---- Expansion Phase (per-endpoint) ----
+    def build_per_endpoint_expanded_tables(self, endpoint_keys: List[str], suffix: str = 'expanded', drop_existing: bool = True):
+        """Create an expanded table for each endpoint individually.
 
-                        total_records += len(data["results"])
-
-                        # Insert in batches of 1000
-                        if len(data_batch) >= 1000:
-                            await self.insert_data_batch(data_batch)
-                            data_batch = []
-
-            # Insert remaining records
-            if data_batch:
-                await self.insert_data_batch(data_batch)
-
-            logger.info("Step 4/5: Running data splitter...")
-            # Now run the splitter to create separate tables
-            splitter = UrbanDataSplitter()
-            splitter.config = self.config  # Share the config
-            splitter.engine = self.engine  # Reuse the connection
-            splitter.run_split_process("urban_data_expanded", begin_year, end_year)
-
-            logger.info("Step 5/5: ETL process completed")
-
-            end_time = datetime.now()
-            duration = end_time - start_time
-
-            logger.info("=" * 80)
-            logger.info("URBAN INSTITUTE ETL COMPLETED SUCCESSFULLY!")
-            logger.info(f"Total duration: {duration}")
-            logger.info(f"Total records processed: {total_records}")
-            logger.info(
-                "Created tables: urban_institute_data, urban_data_expanded, urban_data_directory"
-            )
-            logger.info("=" * 80)
-
-        except Exception as e:
-            logger.error(f"ETL process failed: {e}")
-            raise
-        finally:
-            if self.engine:
-                self.engine.dispose()
-
-
-class UrbanDataSplitter:
-    """Class to split JSONB data_json column into separate columns"""
-
-    def __init__(self, config_file="config.json"):
-        """Initialize with database configuration"""
-        self.config = self._load_config(config_file)
-        self.engine = None
-
-    def _load_config(self, config_file):
-        """Load configuration from JSON file or use defaults"""
-        try:
-            with open(config_file, "r") as f:
-                config = json.load(f)
-            logger.info("Configuration loaded successfully")
-            return config
-        except FileNotFoundError:
-            logger.warning(
-                f"Configuration file {config_file} not found, using defaults"
-            )
-            return {
-                "local_database": {
-                    "host": "localhost",
-                    "port": 5432,
-                    "database": "milestone2",
-                    "username": "postgres",
-                    "password": "password",
-                }
-            }
-
-    def connect_to_database(self):
-        """Establish connection to PostgreSQL database"""
-        try:
-            db_creds = self.config.get("local_database", {})
-
-            connection_string = (
-                f"postgresql://{db_creds['username']}:{db_creds['password']}"
-                f"@{db_creds['host']}:{db_creds['port']}/{db_creds['database']}"
-            )
-
-            self.engine = create_engine(
-                connection_string,
-                pool_size=10,
-                max_overflow=20,
-                pool_pre_ping=True,
-                pool_recycle=3600,
-            )
-
-            # Test connection
-            with self.engine.connect() as conn:
-                conn.execute(text("SELECT 1"))
-
-            logger.info("Database connection established successfully")
-
-        except Exception as e:
-            logger.error(f"Failed to connect to database: {e}")
-            raise
-
-    def _sanitize_column_name(self, key: str) -> str:
-        """Sanitize arbitrary JSON key into a safe SQL column name"""
-        try:
-            name = str(key)
-            # Replace common problematic characters
-            for ch in ["-", " ", ".", "(", ")", "/", "\\"]:
-                name = name.replace(ch, "_")
-            name = name.lower()
-            # If starts with digit, prefix
-            if name and name[0].isdigit():
-                name = f"col_{name}"
-            # Collapse consecutive underscores
-            while "__" in name:
-                name = name.replace("__", "_")
-            return name
-        except Exception:
-            return "col_invalid"
-
-    def analyze_json_structure(
-        self, begin_year=None, end_year=None
-    ) -> Dict[str, Set[str]]:
-        """Analyze the structure of JSON data in data_json column to understand all possible keys"""
-        logger.info("Analyzing JSON structure in data_json column...")
-
-        try:
-            with self.engine.connect() as conn:
-                # Build year filter
-                year_filter = ""
-                if begin_year is not None and end_year is not None:
-                    year_filter = f" AND year BETWEEN {begin_year} AND {end_year}"
-
-                # Get sample of data_json to analyze structure
-                query = f"""
-                SELECT endpoint, year, data_json
-                FROM urban_institute_data
-                WHERE data_json IS NOT NULL{year_filter}
-                LIMIT 1000
-                """
-
-                df = pd.read_sql(query, conn)
-
-            if df.empty:
-                logger.warning(
-                    "No data found in urban_data table for the specified criteria"
-                )
-                return {}
-
-            # Analyze JSON structure by endpoint
-            structure = {}
-            for _, row in df.iterrows():
-                endpoint = row["endpoint"]
-                if endpoint not in structure:
-                    structure[endpoint] = set()
-
+        For each raw table urban_<endpoint>, detect distinct JSON keys and create a new table:
+            <schema>.urban_<endpoint>_<suffix>
+        Only scalar values are extracted using ->>.
+        Returns list of metadata dicts for created tables.
+        """
+        results = []
+        with self.engine.connect() as conn:
+            for ep_key in endpoint_keys:
+                raw_table = self.raw_table_names.get(ep_key, f"urban_{sanitize_identifier(ep_key)}")
+                expanded_table = f"{raw_table}_{sanitize_identifier(suffix)}"
+                full_expanded = f"{DB_SCHEMA}.{expanded_table}"
+                logger.info(f"Expanding endpoint '{ep_key}' into {full_expanded}")
+                # Gather keys
                 try:
-                    # Handle both string and already-parsed JSON
-                    if isinstance(row["data_json"], str):
-                        json_data = json.loads(row["data_json"])
-                    else:
-                        json_data = row["data_json"]
-
-                    if isinstance(json_data, dict):
-                        structure[endpoint].update(json_data.keys())
-                except (json.JSONDecodeError, TypeError) as e:
-                    logger.warning(
-                        f"Could not parse data_json for endpoint {endpoint}: {e}"
-                    )
+                    key_rows = conn.execute(text(f"SELECT DISTINCT jsonb_object_keys(data_json) AS k FROM {DB_SCHEMA}.{raw_table}"))
+                    key_rows = key_rows.fetchall()
+                except Exception as e:  # pragma: no cover
+                    logger.warning(f"Skipping expansion for {raw_table}: {e}")
                     continue
-
-            # Log structure analysis
-            logger.info("Raw Data JSON Structure Analysis:")
-            for endpoint, keys in structure.items():
-                logger.info(f"  Endpoint: {endpoint}")
-                logger.info(f"    Keys: {', '.join(sorted(keys))}")
-                logger.info(f"    Total keys: {len(keys)}")
-
-            return structure
-
-        except Exception as e:
-            logger.error(f"Failed to analyze data_json JSON structure: {e}")
-            raise
-
-    def get_all_unique_keys(
-        self,
-        begin_year=None,
-        end_year=None,
-        exclude_directory=False,
-        directory_only=False,
-    ) -> Set[str]:
-        """Get all unique keys from all JSON data in data_json column"""
-        logger.info("Extracting all unique keys from data_json column...")
-
-        try:
-            with self.engine.connect() as conn:
-                # Build year filter if specified
-                year_filter = ""
-                if begin_year is not None and end_year is not None:
-                    year_filter = f" AND year BETWEEN {begin_year} AND {end_year}"
-                    logger.info(f"Analyzing keys for years {begin_year}-{end_year}")
-
-                # Build endpoint filter
-                endpoint_filter = ""
-                if exclude_directory:
-                    endpoint_filter = " AND endpoint NOT LIKE '%directory%'"
-                    logger.info("Excluding directory endpoints")
-                elif directory_only:
-                    endpoint_filter = " AND endpoint LIKE '%directory%'"
-                    logger.info("Including only directory endpoints")
-
-                # Use PostgreSQL JSONB functions to get all keys from data_json
-                query = f"""
-                SELECT DISTINCT jsonb_object_keys(data_json::jsonb) as json_key
-                FROM urban_institute_data
-                WHERE data_json IS NOT NULL{year_filter}{endpoint_filter}
-                ORDER BY json_key
-                """
-
-                result = conn.execute(text(query))
-                keys = {row[0] for row in result.fetchall()}
-
-            filter_desc = ""
-            if exclude_directory:
-                filter_desc = " (excluding directory)"
-            elif directory_only:
-                filter_desc = " (directory only)"
-
-            logger.info(
-                f"Found {len(keys)} unique keys from data_json column{filter_desc}: {', '.join(sorted(keys))}"
-            )
-            return keys
-
-        except Exception as e:
-            logger.error(f"Failed to get unique keys from data_json: {e}")
-            raise
-
-    def create_expanded_table(
-        self,
-        table_name="urban_data_expanded",
-        begin_year=None,
-        end_year=None,
-        exclude_directory=False,
-    ):
-        """Create expanded table with separate columns for JSON fields"""
-        logger.info(f"Creating expanded table: {table_name}")
-
-        try:
-            # Get all unique keys first
-            unique_keys = self.get_all_unique_keys(
-                begin_year, end_year, exclude_directory=exclude_directory
-            )
-
-            with self.engine.connect() as conn:
-                # Drop existing expanded table if it exists
-                drop_sql = f"DROP TABLE IF EXISTS {table_name} CASCADE;"
-                conn.execute(text(drop_sql))
+                used_cols: set[str] = set()
+                key_map: Dict[str, str] = {}
+                reserved = {"year", "fetched_at", "id"}
+                for (orig_key,) in key_rows:
+                    if orig_key is None:
+                        continue
+                    base = sanitize_identifier(str(orig_key))
+                    # Avoid collision with base columns; rename if necessary
+                    if base in reserved:
+                        base = f"{base}_json"
+                    col = base
+                    i = 1
+                    while col in used_cols:
+                        col = f"{base}_{i}"
+                        i += 1
+                    used_cols.add(col)
+                    key_map[orig_key] = col
+                if drop_existing:
+                    conn.execute(text(f"DROP TABLE IF EXISTS {full_expanded} CASCADE;"))
+                col_defs = [
+                    'id SERIAL PRIMARY KEY',
+                    'year INTEGER',
+                    'fetched_at TIMESTAMP',
+                ] + [f'"{v}" TEXT' for v in sorted(key_map.values())]
+                ddl = f"CREATE TABLE {full_expanded} (" + ",".join(col_defs) + ");"
+                conn.execute(text(ddl))
+                conn.execute(text(f"CREATE INDEX idx_{expanded_table}_year ON {full_expanded}(year);"))
                 conn.commit()
-
-                # Standard columns from original table
-                standard_columns = [
-                    "id SERIAL PRIMARY KEY",
-                    "data_source VARCHAR(50)",
-                    "endpoint VARCHAR(255)",
-                    "year INTEGER",
-                    "fetched_at TIMESTAMP",
-                    "created_at TIMESTAMP",
-                ]
-
-                # JSON field columns - using TEXT for flexibility
-                # Exclude columns that already exist in standard columns
-                standard_column_names = {
-                    "id",
-                    "data_source",
-                    "endpoint",
-                    "year",
-                    "fetched_at",
-                    "created_at",
-                }
-
-                json_columns = []
-                for key in sorted(unique_keys):
-                    # Sanitize column name consistently
-                    clean_key = self._sanitize_column_name(key)
-                    # Skip if this column already exists in standard columns
-                    if clean_key.lower() not in standard_column_names:
-                        json_columns.append(f"{clean_key} TEXT")
-
-                all_columns = standard_columns + json_columns
-
-                create_sql = f"""
-                CREATE TABLE {table_name} (
-                    {','.join(all_columns)}
-                );
-
-                -- Create indexes
-                CREATE INDEX idx_{table_name}_year ON {table_name}(year);
-                CREATE INDEX idx_{table_name}_endpoint ON {table_name}(endpoint);
-                CREATE INDEX idx_{table_name}_data_source ON {table_name}(data_source);
-                """
-
-                conn.execute(text(create_sql))
-                conn.commit()
-
-            logger.info(
-                f"Successfully created {table_name} with {len(json_columns)} JSON-derived columns"
-            )
-
-        except Exception as e:
-            logger.error(f"Failed to create expanded table: {e}")
-            raise
-
-    def create_directory_table(
-        self, table_name="urban_data_directory", begin_year=None, end_year=None
-    ):
-        """Create directory table specifically for directory endpoint data"""
-        logger.info(f"Creating directory table: {table_name}")
-
-        try:
-            # Get unique keys only from directory endpoints
-            unique_keys = self.get_all_unique_keys(
-                begin_year, end_year, directory_only=True
-            )
-
-            with self.engine.connect() as conn:
-                # Drop existing directory table if it exists
-                drop_sql = f"DROP TABLE IF EXISTS {table_name} CASCADE;"
-                conn.execute(text(drop_sql))
-                conn.commit()
-
-                # Standard columns from original table
-                standard_columns = [
-                    "id SERIAL PRIMARY KEY",
-                    "data_source VARCHAR(50)",
-                    "endpoint VARCHAR(255)",
-                    "year INTEGER",
-                    "fetched_at TIMESTAMP",
-                    "created_at TIMESTAMP",
-                ]
-
-                # JSON field columns - using TEXT for flexibility
-                # Exclude columns that already exist in standard columns
-                standard_column_names = {
-                    "id",
-                    "data_source",
-                    "endpoint",
-                    "year",
-                    "fetched_at",
-                    "created_at",
-                }
-
-                json_columns = []
-                for key in sorted(unique_keys):
-                    # Sanitize column name consistently
-                    clean_key = self._sanitize_column_name(key)
-                    # Skip if this column already exists in standard columns
-                    if clean_key.lower() not in standard_column_names:
-                        json_columns.append(f"{clean_key} TEXT")
-
-                all_columns = standard_columns + json_columns
-
-                create_sql = f"""
-                CREATE TABLE {table_name} (
-                    {','.join(all_columns)}
-                );
-
-                -- Create indexes
-                CREATE INDEX idx_{table_name}_year ON {table_name}(year);
-                CREATE INDEX idx_{table_name}_endpoint ON {table_name}(endpoint);
-                CREATE INDEX idx_{table_name}_data_source ON {table_name}(data_source);
-                """
-
-                conn.execute(text(create_sql))
-                conn.commit()
-
-            logger.info(
-                f"Successfully created directory table {table_name} with {len(json_columns)} JSON-derived columns"
-            )
-
-        except Exception as e:
-            logger.error(f"Failed to create directory table: {e}")
-            raise
-
-    def populate_expanded_table(
-        self,
-        table_name="urban_data_expanded",
-        batch_size=1000,
-        begin_year=None,
-        end_year=None,
-        exclude_directory=False,
-    ):
-        """Populate the expanded table with data from the original table"""
-        year_filter = ""
-        endpoint_filter = ""
-
-        if begin_year is not None and end_year is not None:
-            year_filter = f" WHERE year BETWEEN {begin_year} AND {end_year}"
-            logger.info(
-                f"Populating expanded table: {table_name} for years {begin_year}-{end_year}"
-            )
-        else:
-            logger.info(f"Populating expanded table: {table_name} for all years")
-
-        if exclude_directory:
-            if year_filter:
-                endpoint_filter = " AND endpoint NOT LIKE '%directory%'"
-            else:
-                year_filter = " WHERE endpoint NOT LIKE '%directory%'"
-                endpoint_filter = ""
-            logger.info("Excluding directory endpoints from expanded table")
-
-        try:
-            # Get unique keys for column mapping based on the same filters
-            unique_keys = self.get_all_unique_keys(
-                begin_year, end_year, exclude_directory=exclude_directory
-            )
-
-            with self.engine.connect() as conn:
-                # Get total count for progress tracking
-                count_query = f"SELECT COUNT(*) FROM urban_institute_data{year_filter}{endpoint_filter}"
-                count_result = conn.execute(text(count_query))
-                total_records = count_result.fetchone()[0]
-
-                logger.info(f"Total records to process: {total_records}")
-
-                processed = 0
-
-                # Process in batches
-                while processed < total_records:
-                    logger.info(
-                        f"Processing batch: {processed + 1} to {min(processed + batch_size, total_records)}"
-                    )
-
-                    # Fetch batch
-                    base_query = """
-                    SELECT id, data_source, endpoint, year, data_json, fetched_at, created_at
-                    FROM urban_institute_data
+                if key_map:
+                    select_cols = []
+                    for orig, col in key_map.items():
+                        safe_key = str(orig).replace("'", "''")
+                        select_cols.append(f"data_json ->> '{safe_key}' AS \"{col}\"")
+                    select_list = ",".join(select_cols)
+                    insert_sql = f"""
+                    INSERT INTO {full_expanded} (year, fetched_at, {','.join(f'"{c}"' for c in key_map.values())})
+                    SELECT year, fetched_at, {select_list}
+                    FROM {DB_SCHEMA}.{raw_table};
                     """
-
-                    full_filter = year_filter + endpoint_filter
-                    if full_filter:
-                        query = (
-                            base_query
-                            + full_filter
-                            + f" ORDER BY id LIMIT {batch_size} OFFSET {processed}"
-                        )
-                    else:
-                        query = (
-                            base_query
-                            + f" ORDER BY id LIMIT {batch_size} OFFSET {processed}"
-                        )
-
-                    logger.debug(f"Executing query: {query}")
-
-                    # Execute the query directly using SQLAlchemy to avoid parameter issues
-                    result = conn.execute(text(query))
-                    df = pd.DataFrame(result.fetchall(), columns=result.keys())
-                    logger.debug(f"Query returned {len(df)} rows")
-
-                    if df.empty:
-                        break
-
-                    # Prepare data for insertion
-                    insert_data = []
-
-                    for _, row in df.iterrows():
-                        record = {
-                            "data_source": row["data_source"],
-                            "endpoint": row["endpoint"],
-                            "year": row["year"],
-                            "fetched_at": row["fetched_at"],
-                            "created_at": row["created_at"],
-                        }
-
-                        # Parse JSON data from data_json column
-                        try:
-                            if isinstance(row["data_json"], str):
-                                json_data = json.loads(row["data_json"])
-                            else:
-                                json_data = row["data_json"]
-
-                            if isinstance(json_data, dict):
-                                for key in unique_keys:
-                                    clean_key = self._sanitize_column_name(key)
-                                    record[clean_key] = (
-                                        str(json_data.get(key, ""))
-                                        if json_data.get(key) is not None
-                                        else ""
-                                    )
-                            else:
-                                # Handle non-dict JSON data
-                                for key in unique_keys:
-                                    clean_key = self._sanitize_column_name(key)
-                                    record[clean_key] = ""
-
-                        except (json.JSONDecodeError, TypeError) as e:
-                            logger.warning(
-                                f"Could not parse data_json JSON for record {row['id']}: {e}"
-                            )
-                            # Fill with empty strings for all JSON columns
-                            for key in unique_keys:
-                                clean_key = self._sanitize_column_name(key)
-                                record[clean_key] = ""
-
-                        insert_data.append(record)
-
-                    # Insert batch using pandas to_sql
-                    if insert_data:
-                        insert_df = pd.DataFrame(insert_data)
-                        insert_df.to_sql(
-                            table_name,
-                            conn,
-                            if_exists="append",
-                            index=False,
-                            method="multi",
-                        )
-                    conn.commit()
-
-                    processed += len(df)
-                    logger.info(
-                        f"Processed {processed}/{total_records} records ({processed/total_records*100:.1f}%)"
-                    )
-
-                logger.info(
-                    f"Successfully populated {table_name} with {processed} records"
-                )
-
-        except Exception as e:
-            logger.error(f"Failed to populate expanded table: {e}")
-            raise
-
-    def populate_directory_table(
-        self,
-        table_name="urban_data_directory",
-        batch_size=1000,
-        begin_year=None,
-        end_year=None,
-    ):
-        """Populate the directory table with data from directory endpoints only"""
-        year_filter = ""
-        endpoint_filter = " WHERE endpoint LIKE '%directory%'"
-
-        if begin_year is not None and end_year is not None:
-            year_filter = f" AND year BETWEEN {begin_year} AND {end_year}"
-            logger.info(
-                f"Populating directory table: {table_name} for years {begin_year}-{end_year}"
-            )
-        else:
-            logger.info(f"Populating directory table: {table_name} for all years")
-
-        try:
-            # Get unique keys for column mapping from directory endpoints only
-            unique_keys = self.get_all_unique_keys(
-                begin_year, end_year, directory_only=True
-            )
-
-            with self.engine.connect() as conn:
-                # Get total count for progress tracking
-                count_query = f"SELECT COUNT(*) FROM urban_institute_data{endpoint_filter}{year_filter}"
-                count_result = conn.execute(text(count_query))
-                total_records = count_result.fetchone()[0]
-
-                logger.info(f"Total directory records to process: {total_records}")
-
-                processed = 0
-
-                # Process in batches
-                while processed < total_records:
-                    logger.info(
-                        f"Processing directory batch: {processed + 1} to {min(processed + batch_size, total_records)}"
-                    )
-
-                    # Fetch batch
-                    base_query = """
-                    SELECT id, data_source, endpoint, year, data_json, fetched_at, created_at
-                    FROM urban_institute_data
-                    """
-
-                    query = (
-                        base_query
-                        + endpoint_filter
-                        + year_filter
-                        + f" ORDER BY id LIMIT {batch_size} OFFSET {processed}"
-                    )
-                    result = conn.execute(text(query))
-                    df = pd.DataFrame(result.fetchall(), columns=result.keys())
-
-                    if df.empty:
-                        break
-
-                    # Prepare data for insertion
-                    insert_data = []
-
-                    for _, row in df.iterrows():
-                        record = {
-                            "data_source": row["data_source"],
-                            "endpoint": row["endpoint"],
-                            "year": row["year"],
-                            "fetched_at": row["fetched_at"],
-                            "created_at": row["created_at"],
-                        }
-
-                        # Parse JSON data from data_json column
-                        try:
-                            if isinstance(row["data_json"], str):
-                                json_data = json.loads(row["data_json"])
-                            else:
-                                json_data = row["data_json"]
-
-                            if isinstance(json_data, dict):
-                                for key in unique_keys:
-                                    clean_key = self._sanitize_column_name(key)
-                                    record[clean_key] = (
-                                        str(json_data.get(key, ""))
-                                        if json_data.get(key) is not None
-                                        else ""
-                                    )
-                            else:
-                                # Handle non-dict JSON data
-                                for key in unique_keys:
-                                    clean_key = self._sanitize_column_name(key)
-                                    record[clean_key] = ""
-
-                        except (json.JSONDecodeError, TypeError) as e:
-                            logger.warning(
-                                f"Could not parse data_json JSON for record {row['id']}: {e}"
-                            )
-                            # Fill with empty strings for all JSON columns
-                            for key in unique_keys:
-                                clean_key = self._sanitize_column_name(key)
-                                record[clean_key] = ""
-
-                        insert_data.append(record)
-
-                    # Insert batch using pandas to_sql
-                    if insert_data:
-                        insert_df = pd.DataFrame(insert_data)
-                        insert_df.to_sql(
-                            table_name,
-                            conn,
-                            if_exists="append",
-                            index=False,
-                            method="multi",
-                        )
+                    try:
+                        conn.execute(text(insert_sql))
                         conn.commit()
-
-                    processed += len(df)
-                    logger.info(
-                        f"Processed {processed}/{total_records} directory records ({processed/total_records*100:.1f}%)"
-                    )
-
-                logger.info(
-                    f"Successfully populated directory table {table_name} with {processed} records"
-                )
-
-        except Exception as e:
-            logger.error(f"Failed to populate directory table: {e}")
-            raise
-
-    def verify_expanded_table(self, table_name="urban_data_expanded"):
-        """Verify the expanded table was created correctly"""
-        logger.info(f"Verifying expanded table: {table_name}")
-
-        try:
-            with self.engine.connect() as conn:
-                # Get table info
-                count_result = conn.execute(text(f"SELECT COUNT(*) FROM {table_name}"))
-                record_count = count_result.fetchone()[0]
-
-                # Get column info
-                columns_result = conn.execute(
-                    text(
-                        f"""
-                    SELECT column_name, data_type
-                    FROM information_schema.columns
-                    WHERE table_name = '{table_name}'
-                    ORDER BY ordinal_position
-                """
-                    )
-                )
-                columns = columns_result.fetchall()
-
-                logger.info("=" * 60)
-                logger.info(f"EXPANDED TABLE VERIFICATION: {table_name}")
-                logger.info("=" * 60)
-                logger.info(f"Total records: {record_count}")
-                logger.info(f"Total columns: {len(columns)}")
-                logger.info("\nColumn structure:")
-
-                for col_name, col_type in columns[:10]:  # Show first 10 columns
-                    logger.info(f"  {col_name}: {col_type}")
-
-                if len(columns) > 10:
-                    logger.info(f"  ... and {len(columns) - 10} more columns")
-
-                # Show sample data
-                sample_result = conn.execute(
-                    text(f"SELECT * FROM {table_name} LIMIT 3")
-                )
-                sample_data = sample_result.fetchall()
-
-                logger.info(f"\nSample data (first 3 records):")
-                for i, record in enumerate(sample_data):
-                    logger.info(f"Record {i+1}:")
-                    for j, (col_name, _) in enumerate(
-                        columns[:5]
-                    ):  # Show first 5 columns
-                        logger.info(f"  {col_name}: {record[j]}")
-                    if len(columns) > 5:
-                        logger.info(f"  ... and {len(columns) - 5} more fields")
-
-                logger.info("=" * 60)
-
-        except Exception as e:
-            logger.error(f"Failed to verify expanded table: {e}")
-            raise
-
-    def create_analysis_views(
-        self,
-        table_name="urban_data_expanded",
-        directory_table_name="urban_data_directory",
-    ):
-        """Create useful views for data analysis based on actual columns"""
-        logger.info("Creating analysis views...")
-
-        try:
-            with self.engine.connect() as conn:
-                # Get actual columns from the directory table
-                dir_columns_result = conn.execute(
-                    text(
-                        f"""
-                    SELECT column_name
-                    FROM information_schema.columns
-                    WHERE table_name = '{directory_table_name}'
-                    ORDER BY ordinal_position
-                """
-                    )
-                )
-                dir_available_columns = {
-                    row[0] for row in dir_columns_result.fetchall()
-                }
-
-                # Get actual columns from the expanded table
-                exp_columns_result = conn.execute(
-                    text(
-                        f"""
-                    SELECT column_name
-                    FROM information_schema.columns
-                    WHERE table_name = '{table_name}'
-                    ORDER BY ordinal_position
-                """
-                    )
-                )
-                exp_available_columns = {
-                    row[0] for row in exp_columns_result.fetchall()
-                }
-
-                logger.info(
-                    f"Available columns in {directory_table_name}: {len(dir_available_columns)} columns"
-                )
-                logger.info(
-                    f"Available columns in {table_name}: {len(exp_available_columns)} columns"
-                )
-
-                # Define possible columns for each view
-                directory_columns = {
-                    "year": "year",
-                    "leaid": "leaid",
-                    "lea_name": "lea_name",
-                    "ncessch": "ncessch",
-                    "school_name": "school_name",
-                    "phone": "phone",
-                    "mail_addr": "mail_addr",
-                    "mail_city": "mail_city",
-                    "mail_state": "mail_state",
-                    "mail_zip": "mail_zip",
-                    "school_type": "school_type",
-                    "charter": "charter",
-                    "magnet": "magnet",
-                    "title_i_status": "title_i_status",
-                    "enrollment": "enrollment",
-                }
-
-                enrollment_columns = {
-                    "year": "year",
-                    "leaid": "leaid",
-                    "lea_name": "lea_name",
-                    "ncessch": "ncessch",
-                    "school_name": "school_name",
-                    "grade": "grade",
-                    "race": "race",
-                    "sex": "sex",
-                    "enrollment": "enrollment",
-                }
-
-                test_columns = {
-                    "year": "year",
-                    "leaid": "leaid",
-                    "lea_name": "lea_name",
-                    "ncessch": "ncessch",
-                    "school_name": "school_name",
-                    "sat_test_takers": "sat_test_takers",
-                    "act_test_takers": "act_test_takers",
-                    "total_enrollment": "total_enrollment",
-                }
-
-                # Filter columns that actually exist
-                def filter_existing_columns(column_map, available_columns):
-                    return [
-                        col for col in column_map.values() if col in available_columns
-                    ]
-
-                # Create schools directory view from directory table
-                directory_cols = filter_existing_columns(
-                    directory_columns, dir_available_columns
-                )
-                if directory_cols:
-                    schools_view = f"""
-                    CREATE OR REPLACE VIEW schools_directory_view AS
-                    SELECT {', '.join(directory_cols)}
-                    FROM {directory_table_name}
-                    WHERE {'leaid' if 'leaid' in dir_available_columns else 'year'} IS NOT NULL;
-                    """
-                    conn.execute(text(schools_view))
-                    logger.info(
-                        f"Created schools_directory_view with {len(directory_cols)} columns from {directory_table_name}"
-                    )
-                else:
-                    logger.warning(
-                        "Skipped schools_directory_view - no matching columns found"
-                    )
-
-                # Create enrollment view from expanded table
-                enrollment_cols = filter_existing_columns(
-                    enrollment_columns, exp_available_columns
-                )
-                if enrollment_cols:
-                    enrollment_view = f"""
-                    CREATE OR REPLACE VIEW enrollment_view AS
-                    SELECT {', '.join(enrollment_cols)}
-                    FROM {table_name}
-                    WHERE endpoint LIKE '%enrollment%'
-                    AND {'enrollment' if 'enrollment' in exp_available_columns else 'year'} IS NOT NULL;
-                    """
-                    conn.execute(text(enrollment_view))
-                    logger.info(
-                        f"Created enrollment_view with {len(enrollment_cols)} columns from {table_name}"
-                    )
-                else:
-                    logger.warning(
-                        "Skipped enrollment_view - no matching columns found"
-                    )
-
-                # Create test participation view from expanded table
-                test_cols = filter_existing_columns(test_columns, exp_available_columns)
-                if test_cols:
-                    test_view = f"""
-                    CREATE OR REPLACE VIEW test_participation_view AS
-                    SELECT {', '.join(test_cols)}
-                    FROM {table_name}
-                    WHERE endpoint LIKE '%participation%';
-                    """
-                    conn.execute(text(test_view))
-                    logger.info(
-                        f"Created test_participation_view with {len(test_cols)} columns from {table_name}"
-                    )
-                else:
-                    logger.warning(
-                        "Skipped test_participation_view - no matching columns found"
-                    )
-
-                conn.commit()
-                logger.info("Analysis views creation completed")
-
-        except Exception as e:
-            logger.error(f"Failed to create analysis views: {e}")
-            raise
-
-    def run_split_process(
-        self, table_name="urban_data_expanded", begin_year=None, end_year=None
-    ):
-        """Run the complete splitting process"""
-        start_time = datetime.now()
-
-        try:
-            logger.info("=" * 80)
-            logger.info("STARTING URBAN DATA JSONB COLUMN SPLITTING PROCESS")
-            if begin_year is not None and end_year is not None:
-                logger.info(f"Processing years: {begin_year} to {end_year}")
-            else:
-                logger.info("Processing all years in database")
-            logger.info("=" * 80)
-
-            # Step 1: Connect to database
-            logger.info("Step 1/8: Connecting to database...")
-            self.connect_to_database()
-
-            # Step 2: Analyze JSON structure from data_json
-            logger.info("Step 2/8: Analyzing data_json JSON structure...")
-            self.analyze_json_structure(begin_year, end_year)
-
-            # Step 3: Create expanded table for non-directory data
-            logger.info("Step 3/8: Creating expanded table for non-directory data...")
-            self.create_expanded_table(
-                table_name, begin_year, end_year, exclude_directory=True
-            )
-
-            # Step 4: Create directory table for directory data
-            directory_table_name = f"{table_name.replace('_expanded', '')}_directory"
-            logger.info(
-                f"Step 4/8: Creating directory table: {directory_table_name}..."
-            )
-            self.create_directory_table(directory_table_name, begin_year, end_year)
-
-            # Step 5: Populate expanded table (non-directory data)
-            logger.info(
-                "Step 5/8: Populating expanded table with non-directory data..."
-            )
-            self.populate_expanded_table(
-                table_name,
-                begin_year=begin_year,
-                end_year=end_year,
-                exclude_directory=True,
-            )
-
-            # Step 6: Populate directory table
-            logger.info(
-                f"Step 6/8: Populating directory table: {directory_table_name}..."
-            )
-            self.populate_directory_table(
-                directory_table_name, begin_year=begin_year, end_year=end_year
-            )
-
-            # Step 7: Verify results
-            logger.info("Step 7/8: Verifying tables...")
-            self.verify_expanded_table(table_name)
-            self.verify_expanded_table(directory_table_name)
-
-            # Step 8: Create analysis views
-            logger.info("Step 8/8: Creating analysis views...")
-            self.create_analysis_views(table_name, directory_table_name)
-
-            end_time = datetime.now()
-            duration = end_time - start_time
-
-            logger.info("=" * 80)
-            logger.info("JSONB SPLITTING PROCESS COMPLETED SUCCESSFULLY!")
-            logger.info(f"Total duration: {duration}")
-            logger.info(f"Expanded table created: {table_name}")
-            logger.info(f"Directory table created: {directory_table_name}")
-            if begin_year is not None and end_year is not None:
-                logger.info(f"Years processed: {begin_year} to {end_year}")
-            logger.info("Raw_data JSON keys successfully split into individual columns")
-            logger.info("=" * 80)
-
-        except Exception as e:
-            logger.error(f"Splitting process failed: {e}")
-            raise
-        finally:
-            if self.engine:
-                self.engine.dispose()
+                    except Exception as e:  # pragma: no cover
+                        logger.warning(f"Insert failed for {full_expanded}: {e}")
+                count_res = conn.execute(text(f"SELECT COUNT(*) FROM {DB_SCHEMA}.{raw_table}"))
+                raw_count = count_res.scalar() or 0
+                results.append({
+                    'endpoint_key': ep_key,
+                    'raw_table': f"{DB_SCHEMA}.{raw_table}",
+                    'expanded_table': full_expanded,
+                    'column_count': len(key_map),
+                    'raw_row_count': raw_count,
+                })
+                logger.info(f"Created expanded table {full_expanded} with {len(key_map)} JSON-derived columns")
+        return results
 
 
 async def main():
-    """Main function to run ETL or splitting process"""
-    parser = argparse.ArgumentParser(
-        description="Urban Institute ETL and Data Splitting"
-    )
-    parser.add_argument(
-        "--config", type=str, default="config.json", help="Configuration file path"
-    )
-    parser.add_argument(
-        "--mode",
-        type=str,
-        choices=["etl", "split"],
-        default="etl",
-        help="Mode: 'etl' for full ETL process, 'split' for splitting only",
-    )
-    parser.add_argument(
-        "--table-name",
-        type=str,
-        default="urban_data_expanded",
-        help="Name for expanded table",
-    )
-    parser.add_argument("--begin-year", type=int, help="Start year for data processing")
-    parser.add_argument("--end-year", type=int, help="End year for data processing")
-    parser.add_argument(
-        "--drop-tables",
-        action="store_true",
-        help="Drop existing tables before creating new ones",
-    )
-    parser.add_argument(
-        "--verbose", "-v", action="store_true", help="Enable verbose logging"
-    )
+    parser = argparse.ArgumentParser(description='Urban Institute ETL (one raw + one expanded table per endpoint)')
+    parser.add_argument('--config', default='config.json', help='Path to config.json')
+    parser.add_argument('--begin-year', type=int, required=True, help='Start year (inclusive)')
+    parser.add_argument('--end-year', type=int, required=True, help='End year (inclusive)')
+    parser.add_argument('--endpoints', type=str, help='Comma-separated endpoint keys (subset)')
+    parser.add_argument('--max-concurrency', type=int, help='Override max concurrent requests')
+    parser.add_argument('--batch-size', type=int, help='Flush threshold per endpoint buffer')
+    parser.add_argument('--page-delay-ms', type=int, help='Delay between paginated requests (ms)')
+    parser.add_argument('--keep-awake', action='store_true', help='Keep system awake during run')
+    parser.add_argument('-v', '--verbose', action='store_true', help='Verbose logging')
+    parser.add_argument('--drop-existing', action='store_true', help='Drop existing per-endpoint tables before ingest')
+    parser.add_argument('--skip-expand', action='store_true', help='Skip per-endpoint expanded tables creation')
+    parser.add_argument('--expanded-suffix', default='expanded', help='Suffix for per-endpoint expanded tables (default: expanded)')
     args = parser.parse_args()
 
     if args.verbose:
         logging.getLogger().setLevel(logging.DEBUG)
 
-    # Validate year parameters
-    if (args.begin_year is not None and args.end_year is None) or (
-        args.begin_year is None and args.end_year is not None
-    ):
-        logger.error(
-            "Both --begin-year and --end-year must be specified together, or neither"
-        )
+    if args.begin_year > args.end_year:
+        logger.error('begin-year cannot be greater than end-year')
         sys.exit(1)
 
-    if (
-        args.begin_year is not None
-        and args.end_year is not None
-        and args.begin_year > args.end_year
-    ):
-        logger.error("--begin-year cannot be greater than --end-year")
-        sys.exit(1)
+    cfg = load_config(args.config)
+    async_cfg = cfg.get('async', {})
+    etl_cfg = cfg.get('etl', {})
+    urb_pag = cfg.get('urban', {}).get('pagination', {})
+    max_concurrency = args.max_concurrency or async_cfg.get('max_concurrent_requests', 10)
+    batch_size = args.batch_size or etl_cfg.get('batch_size', 1000)
+    page_delay = (args.page_delay_ms / 1000.0) if args.page_delay_ms else urb_pag.get('page_delay_ms', 300) / 1000.0
 
+    subset = None
+    if args.endpoints:
+        subset = [e.strip() for e in args.endpoints.split(',') if e.strip()]
+
+    etl = EndpointETL(cfg, drop_existing=args.drop_existing)
+    wake_ctx = keep.running() if args.keep_awake else None
     try:
-        if args.mode == "etl":
-            # Run full ETL process (fetch data + create tables)
-            logger.info("Running Urban Institute ETL process...")
-            etl = AsyncUrbanDataETL(args.config, drop_existing_tables=args.drop_tables)
-            await etl.run_etl_async(args.begin_year, args.end_year)
+        if wake_ctx:
+            logger.info('wakepy engaged; preventing sleep...')
+        ctx_mgr = wake_ctx if wake_ctx else nullcontext()
+        start = datetime.utcnow()
+        stats = await etl.ingest(
+            begin_year=args.begin_year,
+            end_year=args.end_year,
+            endpoint_subset=subset,
+            max_concurrency=max_concurrency,
+            page_delay=page_delay,
+            flush_threshold=batch_size,
+        )
+        elapsed = datetime.utcnow() - start
+        logger.info('=' * 72)
+        logger.info('ETL COMPLETE')
+        logger.info(f"Rows seen: {stats['rows_seen']} | Rows inserted (unique): {stats['rows_inserted']}")
+        logger.info('Tables:')
+        for t in stats['endpoint_tables']:
+            logger.info(f'  - {t}')
+        logger.info(f'Duration: {elapsed}')
+        if not args.skip_expand:
+            logger.info('Beginning per-endpoint expansion phase...')
+            expansions = etl.build_per_endpoint_expanded_tables(stats['endpoint_keys'], suffix=args.expanded_suffix)
+            for e in expansions:
+                logger.info(f"Expanded: {e['expanded_table']} | cols={e['column_count']} | raw_rows={e['raw_row_count']}")
+        else:
+            logger.info('Per-endpoint expansion skipped (--skip-expand set)')
+        logger.info('=' * 72)
+    finally:
+        etl.engine.dispose()
 
-        elif args.mode == "split":
-            # Run splitting process only
-            logger.info("Running Urban Institute data splitting process...")
-            splitter = UrbanDataSplitter(config_file=args.config)
-            splitter.run_split_process(
-                table_name=args.table_name,
-                begin_year=args.begin_year,
-                end_year=args.end_year,
-            )
 
-        logger.info("Process completed successfully!")
-
-    except Exception as e:
-        logger.error(f"Process failed: {e}")
-        sys.exit(1)
-
-
-if __name__ == "__main__":
+if __name__ == '__main__':
     asyncio.run(main())

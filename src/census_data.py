@@ -13,17 +13,21 @@ import logging
 import sys
 import traceback
 from datetime import datetime
+import os
 
 import censusdata
 import pandas as pd
 from sqlalchemy import create_engine, text
+
+# Database schema configuration - read from config file
+DB_SCHEMA = None  # Will be set from config
 
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s",
     handlers=[
-        logging.FileHandler("./logs/census_etl_simple.log", encoding="utf-8"),
+        logging.FileHandler("../logs/census_etl_simple.log", encoding="utf-8"),
         logging.StreamHandler(sys.stdout),
     ],
 )
@@ -34,30 +38,66 @@ class SimpleCensusETL:
     """Simplified ETL class for Census data to PostgreSQL"""
 
     def __init__(self, config_file="config.json"):
-        """Initialize the ETL process with configuration"""
-        self.config = self._load_config(config_file)
+        """Initialize the ETL process with configuration.
+
+        If the provided config_file is relative and not found in the current
+        working directory, we attempt to discover it by searching parent
+        directories (up to 5 levels) relative to this script's location.
+    This has been simplified: we no longer use an environment variable
+    override; we just look upward for the first matching config filename.
+        """
+        resolved = self._resolve_config_path(config_file)
+        if resolved != config_file:
+            logger.info(f"🔍 Resolved config file: {resolved}")
+        else:
+            logger.info(f"🔍 Using config file: {resolved}")
+        self.config = self._load_config(resolved)
         self.engine = None
+
+    def _resolve_config_path(self, path: str) -> str:
+        # Absolute path supplied and exists
+        if os.path.isabs(path) and os.path.isfile(path):
+            return path
+        # If relative and exists in CWD, use it
+        if not os.path.isabs(path) and os.path.isfile(path):
+            return os.path.abspath(path)
+        # Search upward from script directory
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        candidates = []
+        for depth in range(0, 6):
+            candidate = os.path.join(script_dir, *( [".."] * depth ), path)
+            candidate = os.path.abspath(candidate)
+            if candidate not in candidates:
+                candidates.append(candidate)
+            if os.path.isfile(candidate):
+                return candidate
+        logger.debug("Config file not found in candidates: " + "; ".join(candidates))
+        return path  # Let _load_config handle fallback
 
     def _load_config(self, config_file):
         """Load configuration from JSON file or use defaults"""
+        global DB_SCHEMA
         try:
             with open(config_file, "r") as f:
                 config = json.load(f)
-            logger.info("Configuration loaded successfully")
+            logger.info(f"✅ Configuration loaded: {config_file}")
+            # Set global schema from config
+            DB_SCHEMA = config.get("schema", "public")
             return config
         except FileNotFoundError:
-            logger.warning(
-                f"Configuration file {config_file} not found, using defaults"
-            )
-            return {
+            logger.warning(f"⚠️ Configuration file {config_file} not found. Using built-in defaults.")
+            default_config = {
                 "local_database": {
                     "host": "localhost",
                     "port": 5432,
                     "database": "milestone2",
                     "username": "postgres",
                     "password": "123",
-                }
+                },
+                "schema": "public"
             }
+            DB_SCHEMA = default_config.get("schema", "public")
+            return default_config
         except json.JSONDecodeError as e:
             logger.error(f"Invalid JSON in configuration file: {e}")
             raise
@@ -88,6 +128,17 @@ class SimpleCensusETL:
             with self.engine.connect() as conn:
                 conn.execute(text("SELECT 1"))
 
+            # Ensure target schema exists
+            if DB_SCHEMA:
+                try:
+                    with self.engine.connect() as conn:
+                        conn.execute(text(f"CREATE SCHEMA IF NOT EXISTS {DB_SCHEMA};"))
+                        conn.commit()
+                    logger.info(f"✅ Schema '{DB_SCHEMA}' is ready")
+                except Exception as sce:
+                    logger.error(f"❌ Failed ensuring schema '{DB_SCHEMA}': {sce}")
+                    raise
+
             logger.info("✅ Database connection established successfully")
 
         except Exception as e:
@@ -107,12 +158,12 @@ class SimpleCensusETL:
                 logger.info("🗄️ Creating database tables...")
 
                 # Drop existing table
-                drop_sql = "DROP TABLE IF EXISTS census_data CASCADE;"
+                drop_sql = f"DROP TABLE IF EXISTS {DB_SCHEMA}.census_data CASCADE;"
                 conn.execute(text(drop_sql))
 
                 # Create new table
-                create_sql = """
-                CREATE TABLE census_data (
+                create_sql = f"""
+                CREATE TABLE {DB_SCHEMA}.census_data (
                     id SERIAL PRIMARY KEY,
                     zip_code VARCHAR(10),
                     year INTEGER,
@@ -136,10 +187,10 @@ class SimpleCensusETL:
                 # Create indexes
                 conn.execute(
                     text(
-                        "CREATE INDEX idx_census_zip_year ON census_data(zip_code, year);"
+                        f"CREATE INDEX idx_census_zip_year ON {DB_SCHEMA}.census_data(zip_code, year);"
                     )
                 )
-                conn.execute(text("CREATE INDEX idx_census_year ON census_data(year);"))
+                conn.execute(text(f"CREATE INDEX idx_census_year ON {DB_SCHEMA}.census_data(year);"))
 
                 conn.commit()
                 logger.info("✅ Database tables created successfully")
@@ -232,6 +283,7 @@ class SimpleCensusETL:
             records_inserted = data.to_sql(
                 "census_data",
                 self.engine,
+                schema=DB_SCHEMA,
                 if_exists="append",
                 index=False,
                 method="multi",
@@ -252,7 +304,7 @@ class SimpleCensusETL:
                 logger.warning("⚠️ No data to save to CSV")
                 return
 
-            data.to_csv(f"./outputs/{filename}", index=False, encoding="utf-8")
+            data.to_csv(f"../outputs/{filename}", index=False, encoding="utf-8")
             logger.info(f"✅ Data saved to ./outputs/{filename}")
 
         except Exception as e:

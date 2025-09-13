@@ -1,0 +1,83 @@
+{
+    "database_type": "local",
+    "database": {
+        "host": "your-aws-rds-endpoint.amazonaws.com",
+        "port": 5432,
+        "database": "multi_api_data",
+        "username": "your_username",
+        "password": "your_password"
+    },
+    "local_database": {
+        "host": "localhost",
+        "port": 5432,
+        "database": "milestone2",
+        "username": "postgres",
+        "password": "123"
+    },
+    "env_database": {
+        "host": "localhost",
+        "port": 5432,
+        "database": "milestone2",
+        "username": "postgres",
+        "password": "123"
+    },
+    "aws": {
+        "region": "us-east-1",
+        "secret_name": "multi-api-database-credentials"
+    },
+    "use_aws_secrets": false,
+    "schema": "test",
+    "census": {
+        "rate_limit_delay": 1,
+        "variables": {
+            "B02001_001E": "Total Pop Estimate",
+            "B19001_016E": "HHI 150K-200K",
+            "B19001_017E": "HHI 220K+",
+            "B01001_006E": "Males 15-17",
+            "B01001_030E": "Females 15-17",
+            "B01001A_006E": "White Males 15-17",
+            "B01001B_006E": "Black Males 15-17",
+            "B01001I_006E": "Hispanic Males 15-17",
+            "B01001A_021E": "White Females 15-17",
+            "B01001B_021E": "Black Females 15-17",
+            "B01001I_021E": "Hispanic Females 15-17"
+        }
+    },
+    "urban": {
+        "base_url": "https://educationdata.urban.org",
+        "pagination": {
+            "page_delay_ms": 500,
+            "retry_on_rate_limit": true,
+            "max_pages_per_endpoint": 100
+        },
+        "endpoints": {
+            "schools_directory": "/api/v1/schools/ccd/directory/{year}",
+            "education_students": "/api/v1/schools/ccd/enrollment/{year}/grade-8", 
+            "assesment_grade-8": "/api/v1/schools/edfacts/assessments/{year}/grade-8/race/sex/"
+
+        }
+    },
+    "etl": {
+        "batch_size": 1000,
+        "census_years": [
+            2014,
+            2024
+        ],
+        "urban_years": [
+            2014,
+            2024
+        ]
+    },
+    "async": {
+        "max_concurrent_requests": 10,
+        "year_batch_size": 2,
+        "batch_delay": 2,
+        "locale_batch_size": 100,
+        "db_batch_size": 1000,
+        "locale_db_batch_size": 500,
+        "connection_pool_size": 10,
+        "max_overflow": 20,
+        "timeout_total": 60,
+        "timeout_connect": 10
+    }
+}
