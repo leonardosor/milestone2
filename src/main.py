@@ -193,11 +193,12 @@ class OrchestatedETLController:
 
                 # Test database connection first
 
-                # Run location data processing
-                process_coordinates(
-                    batch_size=batch_size,
-                    max_coordinates=max_coordinates,
-                    table_name=table_name,
+                # Slow geocoding path not implemented in this trimmed version.
+                logger.error(
+                    "Original slow API-based geocoding method not implemented in this version."
+                )
+                raise NotImplementedError(
+                    "Slow geocoding method is not available. Use the fast method (default)."
                 )
 
             logger.info("✅ Location Data ETL process completed successfully")

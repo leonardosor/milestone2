@@ -10,10 +10,10 @@ Maintains logging and core functionality while being easier to debug.
 import argparse
 import json
 import logging
+import os
 import sys
 import traceback
 from datetime import datetime
-import os
 
 import censusdata
 import pandas as pd
@@ -40,11 +40,11 @@ class SimpleCensusETL:
     def __init__(self, config_file="config.json"):
         """Initialize the ETL process with configuration.
 
-        If the provided config_file is relative and not found in the current
-        working directory, we attempt to discover it by searching parent
-        directories (up to 5 levels) relative to this script's location.
-    This has been simplified: we no longer use an environment variable
-    override; we just look upward for the first matching config filename.
+            If the provided config_file is relative and not found in the current
+            working directory, we attempt to discover it by searching parent
+            directories (up to 5 levels) relative to this script's location.
+        This has been simplified: we no longer use an environment variable
+        override; we just look upward for the first matching config filename.
         """
         resolved = self._resolve_config_path(config_file)
         if resolved != config_file:
@@ -65,7 +65,7 @@ class SimpleCensusETL:
         script_dir = os.path.dirname(os.path.abspath(__file__))
         candidates = []
         for depth in range(0, 6):
-            candidate = os.path.join(script_dir, *( [".."] * depth ), path)
+            candidate = os.path.join(script_dir, *([".."] * depth), path)
             candidate = os.path.abspath(candidate)
             if candidate not in candidates:
                 candidates.append(candidate)
@@ -85,7 +85,9 @@ class SimpleCensusETL:
             DB_SCHEMA = config.get("schema", "public")
             return config
         except FileNotFoundError:
-            logger.warning(f"⚠️ Configuration file {config_file} not found. Using built-in defaults.")
+            logger.warning(
+                f"⚠️ Configuration file {config_file} not found. Using built-in defaults."
+            )
             default_config = {
                 "local_database": {
                     "host": "localhost",
@@ -94,7 +96,7 @@ class SimpleCensusETL:
                     "username": "postgres",
                     "password": "123",
                 },
-                "schema": "public"
+                "schema": "public",
             }
             DB_SCHEMA = default_config.get("schema", "public")
             return default_config
@@ -190,7 +192,11 @@ class SimpleCensusETL:
                         f"CREATE INDEX idx_census_zip_year ON {DB_SCHEMA}.census_data(zip_code, year);"
                     )
                 )
-                conn.execute(text(f"CREATE INDEX idx_census_year ON {DB_SCHEMA}.census_data(year);"))
+                conn.execute(
+                    text(
+                        f"CREATE INDEX idx_census_year ON {DB_SCHEMA}.census_data(year);"
+                    )
+                )
 
                 conn.commit()
                 logger.info("✅ Database tables created successfully")
@@ -280,7 +286,8 @@ class SimpleCensusETL:
             logger.info(f"💾 Inserting {len(data)} records into database...")
 
             # Use pandas to_sql for simplicity
-            records_inserted = data.to_sql(
+            # Insert records (return value unused by pandas; flake8 F841 fix)
+            data.to_sql(
                 "census_data",
                 self.engine,
                 schema=DB_SCHEMA,

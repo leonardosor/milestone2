@@ -52,7 +52,7 @@
         },
         "endpoints": {
             "schools_directory": "/api/v1/schools/ccd/directory/{year}",
-            "education_students": "/api/v1/schools/ccd/enrollment/{year}/grade-8", 
+            "education_students": "/api/v1/schools/ccd/enrollment/{year}/grade-8",
             "assesment_grade-8": "/api/v1/schools/edfacts/assessments/{year}/grade-8/race/sex/"
 
         }
