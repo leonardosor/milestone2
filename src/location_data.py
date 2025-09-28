@@ -29,7 +29,7 @@ Environment Variables (optional overrides):
 
 Outputs:
     Creates (or replaces) table with columns:
-        id, latitude, longitude, zip, county, state, state_fips, created_at
+        id, latitude, longitude, zip, county, county_fips, state, state_fips, created_at
 
 Dependencies (add to requirements.txt if missing):
     geopandas, shapely, fiona, pyproj, rtree (optional, speeds up), tqdm, requests
@@ -285,11 +285,20 @@ def load_geodata(zcta_dir: Path, county_dir: Path, state_dir: Path):
 
     zcta_gdf = gpd.read_file(first_shp(zcta_dir))[["ZCTA5CE20", "geometry"]]
     county_gdf = gpd.read_file(first_shp(county_dir))[
-        ["NAME", "STATEFP", "GEOID", "geometry"]
+        ["NAME", "STATEFP", "GEOID", "COUNTYFP", "geometry"]
     ]
     state_gdf = gpd.read_file(first_shp(state_dir))[
         ["NAME", "STUSPS", "STATEFP", "geometry"]
     ]
+
+    # Remove leading zeros from FIPS codes as requested
+    state_gdf["STATEFP"] = (
+        state_gdf["STATEFP"].astype(str).str.lstrip("0").replace({"": "0"})
+    )
+    county_gdf["STATEFP"] = (
+        county_gdf["STATEFP"].astype(str).str.lstrip("0").replace({"": "0"})
+    )
+    county_gdf["COUNTYFP"] = county_gdf["COUNTYFP"].astype(str).str.lstrip("0")
 
     # Ensure all are in WGS84 (EPSG:4326)
     for g in (zcta_gdf, county_gdf, state_gdf):
@@ -325,7 +334,8 @@ def save_tiger_to_db(zcta_gdf, county_gdf, state_gdf, table_name="census_geodata
                 geoid VARCHAR(20),
                 name VARCHAR(255),
                 layer_type VARCHAR(20),  -- 'zcta', 'county', 'state'
-                state_fips VARCHAR(2),
+                state_fips VARCHAR(3),
+                county_fips VARCHAR(4),  -- 3-digit county FIPS (null for non-county rows)
                 geometry GEOMETRY,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
@@ -348,10 +358,10 @@ def save_tiger_to_db(zcta_gdf, county_gdf, state_gdf, table_name="census_geodata
 
         cur.executemany(
             f"""
-            INSERT INTO {DB_SCHEMA}.{table_name} (geoid, name, layer_type, state_fips, geometry)
-            VALUES (%s, %s, %s, %s, ST_GeomFromText(%s, 4326))
+            INSERT INTO {DB_SCHEMA}.{table_name} (geoid, name, layer_type, state_fips, county_fips, geometry)
+            VALUES (%s, %s, %s, %s, %s, ST_GeomFromText(%s, 4326))
         """,
-            zcta_records,
+            [(g, n, lt, sf, None, geom) for (g, n, lt, sf, geom) in zcta_records],
         )
 
         # Insert county data
@@ -364,14 +374,15 @@ def save_tiger_to_db(zcta_gdf, county_gdf, state_gdf, table_name="census_geodata
                     row["NAME"],
                     "county",
                     row["STATEFP"],
+                    row["COUNTYFP"],
                     row["geometry"].wkt,
                 )
             )
 
         cur.executemany(
             f"""
-            INSERT INTO {DB_SCHEMA}.{table_name} (geoid, name, layer_type, state_fips, geometry)
-            VALUES (%s, %s, %s, %s, ST_GeomFromText(%s, 4326))
+            INSERT INTO {DB_SCHEMA}.{table_name} (geoid, name, layer_type, state_fips, county_fips, geometry)
+            VALUES (%s, %s, %s, %s, %s, ST_GeomFromText(%s, 4326))
         """,
             county_records,
         )
@@ -386,14 +397,15 @@ def save_tiger_to_db(zcta_gdf, county_gdf, state_gdf, table_name="census_geodata
                     row["NAME"],
                     "state",
                     row["STATEFP"],
+                    None,
                     row["geometry"].wkt,
                 )
             )
 
         cur.executemany(
             f"""
-            INSERT INTO {DB_SCHEMA}.{table_name} (geoid, name, layer_type, state_fips, geometry)
-            VALUES (%s, %s, %s, %s, ST_GeomFromText(%s, 4326))
+            INSERT INTO {DB_SCHEMA}.{table_name} (geoid, name, layer_type, state_fips, county_fips, geometry)
+            VALUES (%s, %s, %s, %s, %s, ST_GeomFromText(%s, 4326))
         """,
             state_records,
         )
@@ -444,22 +456,30 @@ def spatial_join_points(points_df, zcta_gdf, county_gdf, state_gdf):
     pts_state.rename(columns={"NAME": "state", "STATEFP": "state_fips"}, inplace=True)
     pts_county = gpd.sjoin(
         pts_state,
-        county_gdf[["NAME", "STATEFP", "geometry"]],
+        county_gdf[["NAME", "STATEFP", "COUNTYFP", "geometry"]],
         predicate="within",
         how="left",
         rsuffix="_county",
     )
-    pts_county.rename(columns={"NAME": "county"}, inplace=True)
+    pts_county.rename(
+        columns={"NAME": "county", "COUNTYFP": "county_fips"}, inplace=True
+    )
     pts_zcta = gpd.sjoin(
         pts_county, zcta_gdf, predicate="within", how="left", rsuffix="_zcta"
     )
     pts_zcta.rename(columns={"ZCTA5CE20": "zip"}, inplace=True)
 
     result = pts_zcta[
-        ["latitude", "longitude", "zip", "county", "state", "state_fips"]
+        ["latitude", "longitude", "zip", "county", "county_fips", "state", "state_fips"]
     ].copy()
+    # Ensure no leading zeros (defensive in case source changes)
+    result["state_fips"] = (
+        result["state_fips"].astype(str).str.lstrip("0").replace({"": "0"})
+    )
+    result["county_fips"] = result["county_fips"].astype(str).str.lstrip("0")
     result["zip"].fillna("", inplace=True)
     result["county"].fillna("", inplace=True)
+    result["county_fips"].fillna("", inplace=True)
     result["state"].fillna("", inplace=True)
     result["state_fips"].fillna("", inplace=True)
     return result
@@ -524,8 +544,9 @@ def geocode_coordinates_to_location_data(
                 longitude DOUBLE PRECISION NOT NULL,
                 zip VARCHAR(10),
                 county VARCHAR(100),
+                county_fips VARCHAR(3),
                 state VARCHAR(100),
-                state_fips VARCHAR(2),
+                state_fips VARCHAR(3),
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
             """
@@ -534,7 +555,7 @@ def geocode_coordinates_to_location_data(
         # Bulk insert
         records = list(enriched.itertuples(index=False, name=None))
         cur.executemany(
-            f"INSERT INTO {DB_SCHEMA}.{table_name} (latitude, longitude, zip, county, state, state_fips) VALUES (%s,%s,%s,%s,%s,%s)",
+            f"INSERT INTO {DB_SCHEMA}.{table_name} (latitude, longitude, zip, county, county_fips, state, state_fips) VALUES (%s,%s,%s,%s,%s,%s,%s)",
             records,
         )
         conn.commit()
@@ -549,6 +570,9 @@ def geocode_coordinates_to_location_data(
             )
             cur.execute(
                 f"CREATE INDEX IF NOT EXISTS idx_{table_name}_state ON {DB_SCHEMA}.{table_name}(state);"
+            )
+            cur.execute(
+                f"CREATE INDEX IF NOT EXISTS idx_{table_name}_county_fips ON {DB_SCHEMA}.{table_name}(county_fips);"
             )
             conn.commit()
             logger.info("Added indexes on latitude/longitude, zip, state")
