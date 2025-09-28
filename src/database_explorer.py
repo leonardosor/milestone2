@@ -118,8 +118,13 @@ def list_tables_in_schema(engine, schema_name):
             result = conn.execute(
                 text(
                     """
-                SELECT table_name,
-                       (SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = :schema AND table_name = t.table_name) as column_count
+                                SELECT table_name,
+                                             (
+                                                     SELECT COUNT(*)
+                                                     FROM information_schema.columns
+                                                     WHERE table_schema = :schema
+                                                         AND table_name = t.table_name
+                                             ) as column_count
                 FROM information_schema.tables t
                 WHERE table_schema = :schema
                 AND table_type = 'BASE TABLE'
