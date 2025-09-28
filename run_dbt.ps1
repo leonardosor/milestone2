@@ -9,6 +9,14 @@ if (Test-Path .env) {
     }
 }
 
-# Change to dbt project directory and run dbt
-Set-Location "dbt_project"
-dbt run --profiles-dir .
+# Change to dbt project directory, run dbt, and then return to original directory
+$originalLocation = Get-Location
+try {
+    Set-Location "dbt_project"
+    Write-Host "Running dbt in $(Get-Location)" -ForegroundColor Cyan
+    dbt run --profiles-dir . --select "path:models/dev"
+}
+finally {
+    Set-Location $originalLocation
+    Write-Host "Returned to original directory: $(Get-Location)" -ForegroundColor Green
+}
