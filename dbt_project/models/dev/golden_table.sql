@@ -8,8 +8,8 @@
 -- Strategy: normalize each CTE to its key, then join; add ROW_NUMBER diagnostics.
 
 WITH location_data AS (
-        SELECT 
-                zip, 
+        SELECT
+                zip,
                 county_fips,
                 state,
                 state_fips,
@@ -17,12 +17,12 @@ WITH location_data AS (
                 AVG(longitude) AS avg_lon,
                 COUNT(*) AS coordinate_count
         FROM test.location_data
-        WHERE latitude IS NOT NULL 
+        WHERE latitude IS NOT NULL
             AND longitude IS NOT NULL
         GROUP BY zip, county_fips, state, state_fips  -- removed stray 'county'
 ),
 census_2021 AS (
-    SELECT 
+    SELECT
         c.zip_code,
         c.total_pop,
         c.hhi_150k_200k,
@@ -72,12 +72,12 @@ tests_2021 AS (
 		max(read_test_pct_prof_high) as read_test_pct_prof_high,
 		max(read_test_pct_prof_low) as read_test_pct_prof_low,
 		max(read_test_pct_prof_midpt) as read_test_pct_prof_midpt
-	FROM test.urban_edfacts_assessments_grade_8_race_sex_exp	
-	WHERE (year_json::numeric)=2020		
+	FROM test.urban_edfacts_assessments_grade_8_race_sex_exp
+	WHERE (year_json::numeric)=2020
 	GROUP BY ncessch
 ),
 walk as(
-    SELECT 
+    SELECT
         statefp,
         countyfp,
         AVG(natwalkind) as avg_natwalkind
@@ -85,7 +85,7 @@ walk as(
     GROUP BY statefp, countyfp
 ),
 final_dataset AS (
-    SELECT 
+    SELECT
 		s.school_name,
         --s.ncessch,
         s.school_type,
