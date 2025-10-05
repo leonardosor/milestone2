@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Urban Institute ETL (one raw table + one expanded table per endpoint)
 
 Process:
@@ -22,16 +21,6 @@ Process:
        year INTEGER
        fetched_at TIMESTAMP
        one TEXT column per distinct JSON key present in that endpoint's raw JSON records
-
-Flags:
-    --drop-existing    : Drop per-endpoint raw tables before ingest
-    --skip-expand      : Skip creating per-endpoint expanded tables
-    --expanded-suffix  : Suffix appended to each expanded table name (default: expanded)
-
-Notes / Limitations:
-    - Only scalar (textifiable) JSON values are extracted (json ->> key). Non-scalars become NULL.
-    - Key name collisions within a single endpoint are disambiguated with _<n> suffix.
-    - Different endpoints may yield different column sets; there is no unified wide table.
 """
 
 import argparse

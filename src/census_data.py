@@ -39,12 +39,9 @@ class SimpleCensusETL:
 
     def __init__(self, config_file="config.json"):
         """Initialize the ETL process with configuration.
-
             If the provided config_file is relative and not found in the current
             working directory, we attempt to discover it by searching parent
             directories (up to 5 levels) relative to this script's location.
-        This has been simplified: we no longer use an environment variable
-        override; we just look upward for the first matching config filename.
         """
         resolved = self._resolve_config_path(config_file)
         if resolved != config_file:
@@ -88,18 +85,6 @@ class SimpleCensusETL:
             logger.warning(
                 f"⚠️ Configuration file {config_file} not found. Using built-in defaults."
             )
-            default_config = {
-                "local_database": {
-                    "host": "localhost",
-                    "port": 5432,
-                    "database": "milestone2",
-                    "username": "postgres",
-                    "password": "123",
-                },
-                "schema": "public",
-            }
-            DB_SCHEMA = default_config.get("schema", "public")
-            return default_config
         except json.JSONDecodeError as e:
             logger.error(f"Invalid JSON in configuration file: {e}")
             raise
@@ -172,14 +157,14 @@ class SimpleCensusETL:
                     total_pop INTEGER,
                     hhi_150k_200k INTEGER,
                     hhi_220k_plus INTEGER,
-                    males_15_17 INTEGER,
-                    females_15_17 INTEGER,
-                    white_males_15_17 INTEGER,
-                    black_males_15_17 INTEGER,
-                    hispanic_males_15_17 INTEGER,
-                    white_females_15_17 INTEGER,
-                    black_females_15_17 INTEGER,
-                    hispanic_females_15_17 INTEGER,
+                    males_10_14 INTEGER,
+                    females_10_14 INTEGER,
+                    white_males_10_14 INTEGER,
+                    black_males_10_14 INTEGER,
+                    hispanic_males_10_14 INTEGER,
+                    white_females_10_14 INTEGER,
+                    black_females_10_14 INTEGER,
+                    hispanic_females_10_14 INTEGER,
                     data_source VARCHAR(50) DEFAULT 'census_api',
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
@@ -215,14 +200,14 @@ class SimpleCensusETL:
                 "B01003_001E": "total_pop",
                 "B19001_016E": "hhi_150k_200k",
                 "B19001_017E": "hhi_220k_plus",
-                "B01001_006E": "males_15_17",
-                "B01001_030E": "females_15_17",
-                "B01001A_006E": "white_males_15_17",
-                "B01001B_006E": "black_males_15_17",
-                "B01001I_006E": "hispanic_males_15_17",
-                "B01001A_021E": "white_females_15_17",
-                "B01001B_021E": "black_females_15_17",
-                "B01001I_021E": "hispanic_females_15_17",
+                "B01001_005E": "males_10_14",
+                "B01001_029E": "females_10_14",
+                "B01001A_005E": "white_males_10_14",
+                "B01001B_005E": "black_males_10_14",
+                "B01001I_005E": "hispanic_males_10_14",
+                "B01001A_020E": "white_females_10_14",
+                "B01001B_020E": "black_females_10_14",
+                "B01001I_020E": "hispanic_females_10_14",
             }
 
             variable_codes = list(census_variables.keys())

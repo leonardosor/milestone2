@@ -1,0 +1,23 @@
+milestone2_analytics:
+  target: dev
+  outputs:
+    dev:
+      type: postgres
+      host: "{{ env_var('LOCAL_HOST') }}"
+      user: "{{ env_var('LOCAL_USER') }}"
+      password: "{{ env_var('LOCAL_PW') }}"
+      port: "{{ env_var('LOCAL_PORT', '5432') | as_number }}"
+      dbname: "{{ env_var('LOCAL_DB') }}"
+      schema: test
+      threads: 4
+      keepalives_idle: 0
+    prod:
+      type: postgres
+      host: "{{ env_var('PROD_HOST') }}"
+      user: "{{ env_var('PROD_USER') }}"
+      password: "{{ env_var('PROD_PW') }}"
+      port: "{{ env_var('PROD_PORT', '5432') | as_number }}"
+      dbname: "{{ env_var('PROD_DB') }}"
+      schema: test
+      threads: 4
+      keepalives_idle: 0
