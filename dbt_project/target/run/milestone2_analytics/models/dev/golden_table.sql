@@ -1,4 +1,14 @@
-{{ config(materialized='table') }}
+
+  
+    
+
+  create  table "milestone2"."dev"."golden_table__dbt_tmp"
+  
+  
+    as
+  
+  (
+    
 
 -- Golden table intended grain: one row per (ncessch) for academic year 2021
 -- Duplicate sources previously:
@@ -124,3 +134,5 @@ SELECT *
 FROM final_dataset
 WHERE dup_rank = 1  -- enforce one row per school
 ORDER BY school_name
+  );
+  

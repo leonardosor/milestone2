@@ -1,4 +1,4 @@
-{{ config(materialized='table') }}
+
 
 -- Golden table intended grain: one row per (ncessch) for academic year 2021
 -- Duplicate sources previously:
