@@ -39,9 +39,9 @@ class SimpleCensusETL:
 
     def __init__(self, config_file="config.json"):
         """Initialize the ETL process with configuration.
-            If the provided config_file is relative and not found in the current
-            working directory, we attempt to discover it by searching parent
-            directories (up to 5 levels) relative to this script's location.
+        If the provided config_file is relative and not found in the current
+        working directory, we attempt to discover it by searching parent
+        directories (up to 5 levels) relative to this script's location.
         """
         resolved = self._resolve_config_path(config_file)
         if resolved != config_file:

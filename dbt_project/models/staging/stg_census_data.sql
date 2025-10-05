@@ -1,7 +1,7 @@
 {{ config(materialized='view') }}
 
 select
-    zip_code, 
+    zip_code,
     total_pop,
     hhi_150k_200k,
     hhi_200k_plus,
@@ -15,4 +15,3 @@ select
     hispanic_females_15_17
 FROM public.census_data cd
 LEFT JOIN marts.location_data
-

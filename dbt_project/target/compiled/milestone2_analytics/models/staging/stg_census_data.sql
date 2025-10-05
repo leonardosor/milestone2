@@ -1,7 +1,7 @@
 
 
 select
-    zip_code, 
+    zip_code,
     total_pop,
     hhi_150k_200k,
     hhi_200k_plus,
