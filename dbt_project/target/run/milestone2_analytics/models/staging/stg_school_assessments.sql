@@ -1,9 +1,9 @@
 
   create view "milestone2"."public"."stg_school_assessments__dbt_tmp"
-    
-    
+
+
   as (
-    
+
 
 select
     lea_name,

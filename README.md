@@ -291,7 +291,7 @@ python src/main.py
 # Urban Institute data processing
 python src/urban_data.py
 
-# Census data processing  
+# Census data processing
 python src/census_data.py
 
 # Geographic data processing (TIGER/Line shapefile geocoding)
@@ -354,7 +354,7 @@ async def main():
 
     # Run ETL process
     await etl.run_etl_async(endpoints=urban_endpoints)
-    
+
     # Process geographic data
     fast_geocode_coordinates("location_data")
 

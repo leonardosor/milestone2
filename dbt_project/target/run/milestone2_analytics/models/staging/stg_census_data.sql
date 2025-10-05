@@ -1,12 +1,12 @@
 
   create view "milestone2"."public"."stg_census_data__dbt_tmp"
-    
-    
+
+
   as (
-    
+
 
 select
-    zip_code, 
+    zip_code,
     total_pop,
     hhi_150k_200k,
     hhi_200k_plus,
