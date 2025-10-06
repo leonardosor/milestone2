@@ -1,11 +1,6 @@
 {{ config(materialized='table') }}
 
 -- Golden table intended grain: one row per (ncessch) for academic year 2021
--- Duplicate sources previously:
---  * location_data grouped by an unselected 'county' column -> implicit duplication
---  * grade_eight included multiple grades per school -> row explosion when joining on ncessch
---  * possible duplicate directory rows per school
--- Strategy: normalize each CTE to its key, then join; add ROW_NUMBER diagnostics.
 
 WITH location_data AS (
         SELECT
