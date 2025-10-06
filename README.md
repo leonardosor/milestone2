@@ -56,7 +56,7 @@ This project provides a robust, production-ready ETL system that extracts data f
 │   │       ├── stg_location_data.sql
 │   │       ├── stg_school_assessments.sql
 │   │       └── stg_school_directory.sql
-│   
+│
 ├── run_dbt.ps1                   # PowerShell script for dbt execution
 ```
 
