@@ -1,0 +1,74 @@
+[1mdiff --git a/.gitignore b/.gitignore[m
+[1mindex 372dd25..f1873e4 100644[m
+[1m--- a/.gitignore[m
+[1m+++ b/.gitignore[m
+[36m@@ -42,4 +42,4 @@[m [mThumbs.db[m
+ *tiger*[m
+ [m
+ [m
+[31m-*supervised*[m
+\ No newline at end of file[m
+[32m+[m[32m*supervised*[m
+[1mdiff --git a/README.md b/README.md[m
+[1mindex a7d4b87..889cf0a 100644[m
+[1m--- a/README.md[m
+[1m+++ b/README.md[m
+[36m@@ -56,7 +56,7 @@[m [mThis project provides a robust, production-ready ETL system that extracts data f[m
+ │   │       ├── stg_location_data.sql[m
+ │   │       ├── stg_school_assessments.sql[m
+ │   │       └── stg_school_directory.sql[m
+[31m-│   [m
+[32m+[m[32m│[m
+ ├── run_dbt.ps1                   # PowerShell script for dbt execution[m
+ ```[m
+ [m
+[1mdiff --git a/dbt_project/target/compiled/milestone2_analytics/models/dev/golden_table.sql b/dbt_project/target/compiled/milestone2_analytics/models/dev/golden_table.sql[m
+[1mindex f563696..826ec28 100644[m
+[1m--- a/dbt_project/target/compiled/milestone2_analytics/models/dev/golden_table.sql[m
+[1m+++ b/dbt_project/target/compiled/milestone2_analytics/models/dev/golden_table.sql[m
+[36m@@ -123,4 +123,4 @@[m [mfinal_dataset AS ([m
+ SELECT *[m
+ FROM final_dataset[m
+ WHERE dup_rank = 1  -- enforce one row per school[m
+[31m-ORDER BY school_name[m
+\ No newline at end of file[m
+[32m+[m[32mORDER BY school_name[m
+[1mdiff --git a/dbt_project/target/run/milestone2_analytics/models/dev/golden_table.sql b/dbt_project/target/run/milestone2_analytics/models/dev/golden_table.sql[m
+[1mindex 3f0a807..289d502 100644[m
+[1m--- a/dbt_project/target/run/milestone2_analytics/models/dev/golden_table.sql[m
+[1m+++ b/dbt_project/target/run/milestone2_analytics/models/dev/golden_table.sql[m
+[36m@@ -1,14 +1,14 @@[m
+ [m
+[31m-  [m
+[31m-    [m
+[32m+[m
+[32m+[m
+ [m
+   create  table "milestone2"."dev"."golden_table__dbt_tmp"[m
+[31m-  [m
+[31m-  [m
+[32m+[m
+[32m+[m
+     as[m
+[31m-  [m
+[32m+[m
+   ([m
+[31m-    [m
+[32m+[m
+ [m
+ -- Golden table intended grain: one row per (ncessch) for academic year 2021[m
+ -- Duplicate sources previously:[m
+[36m@@ -135,4 +135,3 @@[m [mFROM final_dataset[m
+ WHERE dup_rank = 1  -- enforce one row per school[m
+ ORDER BY school_name[m
+   );[m
+[31m-  [m
+\ No newline at end of file[m
+[1mdiff --git a/dbt_project/target/semantic_manifest.json b/dbt_project/target/semantic_manifest.json[m
+[1mindex 8893f9e..97ab62f 100644[m
+[1m--- a/dbt_project/target/semantic_manifest.json[m
+[1m+++ b/dbt_project/target/semantic_manifest.json[m
+[36m@@ -1 +1 @@[m
+[31m-{"semantic_models": [], "metrics": [], "project_configuration": {"time_spine_table_configurations": [], "metadata": null, "dsi_package_version": {"major_version": "0", "minor_version": "9", "patch_version": "0"}, "time_spines": []}, "saved_queries": []}[m
+\ No newline at end of file[m
+[32m+[m[32m{"semantic_models": [], "metrics": [], "project_configuration": {"time_spine_table_configurations": [], "metadata": null, "dsi_package_version": {"major_version": "0", "minor_version": "9", "patch_version": "0"}, "time_spines": []}, "saved_queries": []}[m
