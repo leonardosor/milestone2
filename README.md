@@ -44,17 +44,6 @@ This project provides a robust, production-ready ETL system that extracts data f
 │   ├── urban_data.py                # Urban Institute ETL component
 │   ├── location_data.py             # Geographic data processing
 │   └── database_explorer.py         # Database exploration utilities
-├── logs/                            # Log files directory
-│   ├── main_etl.log                 # Main ETL execution log
-│   ├── urban_etl_async.log          # Urban Institute ETL log
-│   ├── census_etl_async.log         # Census ETL log
-│   └── census_etl_simple.log        # Simple Census ETL log
-├── outputs/                         # Generated data files
-│   ├── census_data_consolidated.csv # Consolidated census data
-│   ├── census_raw_async.csv         # Raw census data backup
-│   ├── urban_data.csv               # Urban Institute data backup
-│   ├── urban_institute_data.csv     # Urban Institute processed data
-│   └── zip_to_statecity_async.csv   # Geographic mapping data
 ├── dbt_project/                  # dbt (Data Build Tool) project
 │   ├── dbt_project.yml           # dbt project configuration
 │   ├── profiles.yml              # Database connection profiles
@@ -67,25 +56,7 @@ This project provides a robust, production-ready ETL system that extracts data f
 │   │       ├── stg_location_data.sql
 │   │       ├── stg_school_assessments.sql
 │   │       └── stg_school_directory.sql
-│   ├── macros/                   # Reusable SQL macros
-│   │   └── safe_percentage.sql
-│   ├── seeds/                    # Static data files
-│   ├── snapshots/                # Slowly changing dimensions
-│   ├── analyses/                 # Ad-hoc analysis queries
-│   │   └── school_performance_overview.sql
-│   ├── tests/                    # Data quality tests
-│   │   └── test_math_proficiency_range.sql
-│   ├── target/                   # Compiled dbt artifacts
-│   ├── logs/                     # dbt execution logs
-│   │   └── dbt.log
-│   └── requirements_dbt.txt      # dbt-specific dependencies
-├── tiger_data/                   # TIGER/Line shapefile data
-│   ├── tl_2023_us_county.zip     # County boundaries
-│   ├── tl_2023_us_state.zip      # State boundaries
-│   ├── tl_2023_us_zcta520.zip    # ZIP Code Tabulation Areas
-│   ├── county/                   # Extracted county shapefiles
-│   ├── state/                    # Extracted state shapefiles
-│   └── zcta/                     # Extracted ZCTA shapefiles
+│   
 ├── run_dbt.ps1                   # PowerShell script for dbt execution
 ```
 
@@ -125,7 +96,6 @@ This project provides a robust, production-ready ETL system that extracts data f
 - Automatic loading of environment variables from `.env` file
 - Support for dbt profiles with database credentials
 - Error handling and logging
-- Cross-platform compatibility (PowerShell Core)
 
 ### Interactive Tools
 - **`database_table_loader.ipynb`**: Interactive Jupyter notebook for loading and exploring database tables
@@ -137,7 +107,6 @@ This project provides a robust, production-ready ETL system that extracts data f
 - **`.pre-commit-config.yaml`**: Code quality and formatting hooks
 
 ## 🗄️ Supported Data Sources
-
 ### 1. US Census Bureau API
 - **Source**: `censusdata` Python library (v1.15.post1)
 - **Data**: American Community Survey (ACS) 5-year estimates
@@ -230,52 +199,6 @@ brew install postgresql
    ```
 
 ## ⚙️ Configuration
-
-### config.json Structure
-```json
-{
-    "database_type": "local",
-    "local_database": {
-        "host": "localhost",
-        "port": 5432,
-        "database": "milestone2",
-        "username": "postgres",
-        "password": "your_password"
-    },
-    "urban": {
-        "base_url": "https://educationdata.urban.org",
-        "endpoints": {
-            "schools_directory": "/api/v1/schools/ccd/directory/{year}",
-            "education_students": "/api/v1/schools/ccd/enrollment/{year}/grade-12"
-        }
-    },
-    "etl": {
-        "urban_years": [2020, 2023]
-    },
-    "async": {
-        "max_concurrent_requests": 10,
-        "db_batch_size": 1000,
-        "connection_pool_size": 10,
-        "max_overflow": 20
-    }
-}
-```
-
-### Configuration Options
-
-#### Database Configuration
-- **database_type**: `"local"` or `"aws"`
-- **local_database**: Local PostgreSQL connection details
-- **database**: AWS RDS connection details (if using AWS)
-
-#### Urban Institute Configuration
-- **base_url**: API base URL (default: educationdata.urban.org)
-- **endpoints**: Available API endpoints with year placeholders
-
-#### Async Configuration
-- **max_concurrent_requests**: Maximum concurrent API calls
-- **db_batch_size**: Database insertion batch size
-- **connection_pool_size**: Database connection pool size
 
 ## 🚀 Usage
 
@@ -400,12 +323,6 @@ CREATE TABLE urban_institute_data (
 );
 ```
 
-**Indexes:**
-- `idx_urban_data_source`: On data_source column
-- `idx_urban_data_endpoint`: On endpoint column
-- `idx_urban_data_year`: On year column
-- `idx_urban_data_json`: GIN index on JSONB data
-
 ### urban_institute_metadata Table
 ```sql
 CREATE TABLE urban_institute_metadata (
@@ -456,26 +373,7 @@ CREATE TABLE census_geodata (
 - Spatial index on geometry column (GIST)
 
 ## 🔧 Technical Implementation Details
-
-### TIGER/Line Geographic Processing
-The system uses authoritative US Census Bureau TIGER/Line shapefiles for accurate geographic resolution:
-
-```python
-# Load TIGER/Line shapefiles with GeoPandas
-zcta_gdf = gpd.read_file('tiger_data/zcta/tl_2023_us_zcta520.shp')
-county_gdf = gpd.read_file('tiger_data/county/tl_2023_us_county.shp')
-state_gdf = gpd.read_file('tiger_data/state/tl_2023_us_state.shp')
-
-# Perform spatial joins for geocoding
-gdf_pts = gpd.GeoDataFrame(points_df, geometry=points, crs="EPSG:4326")
-enriched = gpd.sjoin(gdf_pts, zcta_gdf, predicate="within", how="left")
 ```
-
-**Key Features:**
-- Automatic CRS transformation to WGS84
-- Spatial indexing for performance
-- PostGIS geometry storage
-- Support for ZCTA, county, and state boundaries
 
 ### dbt Data Transformation
 The project includes a comprehensive dbt setup for data modeling and transformation:
@@ -525,21 +423,8 @@ models:
 ### Error Handling & Recovery
 - **Automatic Retries**: Exponential backoff for failed requests
 - **Data Validation**: Comprehensive type checking and conversion
-- **Graceful Degradation**: Fallback values for problematic data
 - **Detailed Logging**: Complete error context for debugging
 
-## 📊 Performance Features
-
-### Async Processing Benefits
-- **Concurrent API Calls**: 3-7x faster data retrieval
-- **Connection Pooling**: Efficient HTTP and database management
-- **Rate Limiting**: Intelligent request throttling
-- **Batch Processing**: Optimized database insertions
-
-### Memory Management
-- **Streaming Processing**: Large datasets processed in chunks
-- **Automatic Cleanup**: Resource management and disposal
-- **Efficient Data Structures**: Optimized pandas operations
 
 ## 📝 Output Files
 
@@ -569,96 +454,6 @@ models:
 - **`.env`**: Environment variables (credentials, not tracked in git)
 - **`requirements.txt`**: Python package dependencies
 
-## 🐛 Troubleshooting
-
-### Common Issues & Solutions
-
-#### 1. JSON Serialization Errors
-**Problem**: "Object of type Timestamp is not JSON serializable"
-**Solution**: The `TimestampEncoder` class automatically handles this
-
-#### 2. NaN Values in PostgreSQL
-**Problem**: "Token 'NaN' is invalid" in JSONB columns
-**Solution**: Automatic conversion of NaN to NULL during processing
-
-#### 3. Database Connection Issues
-**Problem**: Connection failures or timeouts
-**Solution**: Check database credentials and network connectivity
-
-#### 4. Memory Issues
-**Problem**: Out of memory errors with large datasets
-**Solution**: Reduce batch sizes in configuration
-
-### Debug Mode
-Enable detailed logging by modifying the logging level:
-
-```python
-logging.basicConfig(level=logging.DEBUG)
-```
-
-### Log Analysis
-Check log files for detailed error information:
-- `urban_etl_async.log`: Urban Institute ETL execution details
-- `census_etl_async.log`: Census ETL execution details
-- `main_etl.log`: Overall ETL process information
-
-## 🔒 Security Considerations
-
-- **Credential Management**: Secure storage of database credentials
-- **API Security**: Rate limiting to prevent API abuse
-- **Data Validation**: Input sanitization and validation
-- **Connection Encryption**: SSL/TLS for database connections
-- **Error Sanitization**: No sensitive information in logs
-
-## 🧪 Testing & Validation
-
-The system has been extensively tested with:
-- **Real API Data**: Production Urban Institute and Census APIs
-- **Edge Cases**: NaN values, mixed data types, large datasets
-- **Error Scenarios**: Network failures, API errors, database issues
-- **Performance**: Load testing with concurrent requests
-
-## 📈 Monitoring & Logging
-
-### Log Levels
-- **INFO**: General execution information
-- **DEBUG**: Detailed debugging information
-- **WARNING**: Non-critical issues
-- **ERROR**: Error conditions with context
-
-### Performance Metrics
-- API response times
-- Database insertion rates
-- Memory usage
-- Error rates and types
-
-## 🚀 Future Enhancements
-
-- **Additional Data Sources**: Support for more APIs
-- **Real-time Processing**: Streaming data processing
-- **Advanced Analytics**: Built-in data analysis tools
-- **Web Dashboard**: Monitoring and control interface
-- **Cloud Deployment**: Docker and Kubernetes support
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes with comprehensive testing
-4. Update documentation
-5. Submit a pull request
-
-## 📄 License
-
-This project is licensed under the MIT License.
-
-## 🆘 Support
-
-For issues and questions:
-1. Check the troubleshooting section
-2. Review log files for error details
-3. Verify configuration settings
-4. Create an issue with complete error information
 
 ## 📚 Additional Resources
 
@@ -672,5 +467,3 @@ For issues and questions:
 ---
 
 **Last Updated**: September 9, 2025
-**Version**: 2.2 (Enhanced with TIGER/Line Geospatial Processing & dbt Integration)
-**Status**: Production Ready ✅
