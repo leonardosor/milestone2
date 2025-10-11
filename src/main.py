@@ -17,9 +17,6 @@ Features:
 - Progress tracking and logging
 - Configurable parameters for each stage
 
-Requirements:
-- All dependencies from individual scripts
-- psycopg2-binary, pandas, sqlalchemy, aiohttp, requests, etc.
 """
 
 import argparse

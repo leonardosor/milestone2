@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """
-Simplified Census Data ETL to PostgreSQL Database
 ================================================
 
-This script provides simplified ETL functionality for Census API data.
+This script provides ETL functionality for Census API data.
 Maintains logging and core functionality while being easier to debug.
 """
 
