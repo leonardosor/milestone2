@@ -90,10 +90,8 @@ final_dataset AS (
 		s.grade_eight_enrollment,
 		test.math_test_num_valid::numeric as math_counts,
 		test.math_test_pct_prof_high::numeric as math_high_pct,
-		test.math_test_pct_prof_low::numeric as math_low_pct,
 		test.read_test_num_valid::numeric as read_counts,
 		test.read_test_pct_prof_high::numeric as read_high_pct,
-		test.read_test_pct_prof_low::numeric as read_low_pct,
         --c.zip_code,
         --c.state,
         ROUND(c.hhi_150k_200k::DECIMAL / NULLIF(c.total_pop, 0) * 100, 2) AS pct_hhi_150k_200k,
@@ -103,8 +101,6 @@ final_dataset AS (
         c.pct_10_14,
         c.pct_female_10_14,
         c.total_pop,
-        c.hhi_150k_200k,
-        c.hhi_220k_plus,
         COUNT(*) OVER (PARTITION BY c.zip_code, c.state) AS schools_in_zip,
         ROW_NUMBER() OVER (PARTITION BY s.ncessch ORDER BY c.state, c.zip_code) AS dup_rank
     FROM census_2021 c
