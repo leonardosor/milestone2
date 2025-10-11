@@ -97,10 +97,6 @@ This project provides a robust, production-ready ETL system that extracts data f
 - Support for dbt profiles with database credentials
 - Error handling and logging
 
-### Interactive Tools
-- **`database_table_loader.ipynb`**: Interactive Jupyter notebook for loading and exploring database tables
-- **`test.ipynb`**: Testing and data exploration notebook
-
 ### Configuration & Environment
 - **`config.json`**: Main configuration file for database connections and API settings
 - **`.env`**: Environment variables for sensitive credentials (not tracked in git)
@@ -160,9 +156,7 @@ brew install postgresql
 ```
 
 #### AWS RDS (Optional)
-- Create PostgreSQL RDS instance
-- Configure security groups for access
-- Use AWS Secrets Manager for credentials (optional)
+- Future design
 
 ## 📦 Installation
 
@@ -198,8 +192,6 @@ brew install postgresql
    pre-commit install
    ```
 
-## ⚙️ Configuration
-
 ## 🚀 Usage
 
 ### Basic ETL Execution
@@ -232,178 +224,9 @@ python src/database_explorer.py
 # Run dbt models (bash/cmd)
 dbt run --profiles-dir dbt_project
 
-# Test data quality
-dbt test --profiles-dir dbt_project
-
 # Generate documentation
 dbt docs generate --profiles-dir dbt_project
 dbt docs serve --profiles-dir dbt_project
-```
-
-#### Interactive Data Exploration
-```bash
-# Start Jupyter notebook server
-jupyter notebook
-
-# Open either:
-# - database_table_loader.ipynb (for database interaction)
-# - test.ipynb (for testing and exploration)
-```
-
-### Programmatic Usage
-
-```python
-from src.urban_data import AsyncUrbanDataETL
-from src.location_data import fast_geocode_coordinates
-import asyncio
-
-async def main():
-    # Initialize ETL process
-    etl = AsyncUrbanDataETL()
-
-    # Define endpoints to fetch
-    urban_endpoints = [
-        {
-            'endpoint': '/api/v1/schools/ccd/directory/{year}',
-            'parameters': {'limit': 100},
-            'year': 2023
-        },
-        {
-            'endpoint': '/api/v1/schools/ccd/enrollment/{year}/grade-12',
-            'parameters': {'limit': 100},
-            'year': 2023
-        }
-    ]
-
-    # Run ETL process
-    await etl.run_etl_async(endpoints=urban_endpoints)
-
-    # Process geographic data
-    fast_geocode_coordinates("location_data")
-
-# Execute
-asyncio.run(main())
-```
-
-### Geographic Data Processing (TIGER/Line)
-
-```bash
-# Test database connection for location data
-python src/location_data.py --test-only
-
-# Run full geocoding process with TIGER/Line shapefiles
-python src/location_data.py
-
-# Run with custom table name
-python src/location_data.py --table-name custom_location_data
-
-# Force download of fresh TIGER shapefiles
-python src/location_data.py --download-data
-```
-
-**Features:**
-- Downloads and processes TIGER/Line shapefiles automatically
-- Performs spatial joins to resolve ZIP codes, counties, and states
-- Saves all TIGER geometries to `census_geodata` table for future spatial queries
-- Supports PostGIS for advanced geographic operations
-
-## 🗃️ Database Schema
-
-### urban_institute_data Table
-```sql
-CREATE TABLE urban_institute_data (
-    id SERIAL PRIMARY KEY,
-    data_source VARCHAR(50) DEFAULT 'urban_institute',
-    endpoint VARCHAR(255),
-    year INTEGER,
-    data_json JSONB,
-    fetched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-```
-
-### urban_institute_metadata Table
-```sql
-CREATE TABLE urban_institute_metadata (
-    id SERIAL PRIMARY KEY,
-    endpoint VARCHAR(255) UNIQUE,
-    last_fetched TIMESTAMP,
-    record_count INTEGER,
-    status VARCHAR(50),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-```
-
-### location_data Table
-```sql
-CREATE TABLE location_data (
-    id SERIAL PRIMARY KEY,
-    latitude DOUBLE PRECISION NOT NULL,
-    longitude DOUBLE PRECISION NOT NULL,
-    zip VARCHAR(10),
-    county VARCHAR(100),
-    state VARCHAR(100),
-    state_fips VARCHAR(2),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-```
-
-**Purpose**: Complete geocoding results with ZIP codes, counties, and states resolved from TIGER/Line shapefiles.
-
-### census_geodata Table
-```sql
-CREATE TABLE census_geodata (
-    id SERIAL PRIMARY KEY,
-    geoid VARCHAR(20),
-    name VARCHAR(255),
-    layer_type VARCHAR(20),  -- 'zcta', 'county', 'state'
-    state_fips VARCHAR(2),
-    geometry GEOMETRY,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-```
-
-**Purpose**: Authoritative TIGER/Line geometries for spatial queries and analysis.
-**Indexes:**
-- `idx_census_geodata_geoid`: On geoid column
-- `idx_census_geodata_layer_type`: On layer_type column
-- `idx_census_geodata_state_fips`: On state_fips column
-- Spatial index on geometry column (GIST)
-
-## 🔧 Technical Implementation Details
-```
-
-### dbt Data Transformation
-The project includes a comprehensive dbt setup for data modeling and transformation:
-
-```yaml
-# dbt_project.yml configuration
-name: 'milestone2_analytics'
-version: '1.0.0'
-config-version: 2
-
-profile: 'milestone2'
-
-model-paths: ["models"]
-analysis-paths: ["analyses"]
-test-paths: ["tests"]
-seed-paths: ["seeds"]
-macro-paths: ["macros"]
-snapshot-paths: ["snapshots"]
-
-target-path: "target"
-clean-targets:
-  - "target"
-  - "dbt_packages"
-
-models:
-  milestone2_analytics:
-    staging:
-      materialized: view
-    marts:
-      materialized: table
 ```
 
 **Features:**
@@ -425,36 +248,6 @@ models:
 - **Data Validation**: Comprehensive type checking and conversion
 - **Detailed Logging**: Complete error context for debugging
 
-
-## 📝 Output Files
-
-### Data Outputs (`outputs/` directory)
-- **`census_data_consolidated.csv`**: Consolidated and cleaned census data
-- **`census_raw_async.csv`**: Raw census data backup from async processing
-- **`urban_data.csv`**: Urban Institute data backup
-- **`urban_institute_data.csv`**: Processed Urban Institute data
-- **`zip_to_statecity_async.csv`**: Geographic mapping data
-
-### TIGER/Line Data (`tiger_data/` directory)
-- **`tl_2023_us_zcta520.zip`**: ZIP Code Tabulation Areas shapefile
-- **`tl_2023_us_county.zip`**: County boundaries shapefile
-- **`tl_2023_us_state.zip`**: State boundaries shapefile
-- **`zcta/`**: Extracted ZCTA shapefile components (.shp, .dbf, .prj, .shx)
-- **`county/`**: Extracted county shapefile components
-- **`state/`**: Extracted state shapefile components
-
-### Log Files (`logs/` directory)
-- **`main_etl.log`**: Main ETL execution log
-- **`urban_etl_async.log`**: Detailed Urban Institute ETL log
-- **`census_etl_async.log`**: Detailed Census ETL log (async version)
-- **`census_etl_simple.log`**: Simple Census ETL log
-
-### Configuration Files
-- **`config.json`**: Main configuration file
-- **`.env`**: Environment variables (credentials, not tracked in git)
-- **`requirements.txt`**: Python package dependencies
-
-
 ## 📚 Additional Resources
 
 - **Urban Institute API**: https://educationdata.urban.org
@@ -462,8 +255,6 @@ models:
 - **PostgreSQL Documentation**: https://www.postgresql.org/docs/
 - **SQLAlchemy Documentation**: https://docs.sqlalchemy.org/
 - **Reverse Geocoder Library**: https://github.com/thampiman/reverse-geocoder
-- **Jupyter Notebook Documentation**: https://jupyter-notebook.readthedocs.io/
 
 ---
 
-**Last Updated**: September 9, 2025
