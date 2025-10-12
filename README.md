@@ -14,7 +14,6 @@ This project provides a robust, production-ready ETL system that extracts data f
 
 ### 🔧 Technical Enhancements
 - **Custom JSON Encoder**: `TimestampEncoder` class for handling pandas Timestamps and NaN values
-- **Robust Data Cleaning**: Automatic conversion of problematic data types
 - **Improved SQL Parameter Binding**: Named parameters for safer database operations
 - **Enhanced Logging**: Detailed debugging information for troubleshooting
 - **Data Validation**: Comprehensive data type checking and conversion
@@ -27,7 +26,6 @@ This project provides a robust, production-ready ETL system that extracts data f
 - **Production-Ready**: Extensive error handling and data validation
 - **Modular Design**: Separate, well-tested components for different data sources
 - **Multi-API Support**: US Census Bureau and Urban Institute APIs
-- **Async Processing**: High-performance concurrent API calls with rate limiting
 - **Database Flexibility**: Support for both local PostgreSQL and AWS RDS
 - **Comprehensive Logging**: Detailed execution logs with debugging information
 - **Automatic Data Cleaning**: Handles NaN values, timestamps, and mixed data types
@@ -129,8 +127,6 @@ This project provides a robust, production-ready ETL system that extracts data f
   - Fully offline processing (no API keys required)
   - Authoritative US Census Bureau data
   - Spatial joins for accurate geographic resolution
-  - PostGIS geometry storage for advanced spatial queries
-  - Automatic CRS transformation to WGS84 (EPSG:4326)
 - **Output**: `census_geodata` table with WKT geometries and `location_data` table with ZIP/county/state mappings
 
 ## 🛠️ Prerequisites
@@ -231,10 +227,6 @@ dbt docs serve --profiles-dir dbt_project
 
 **Features:**
 - Staging layer for data cleaning and standardization
-- Marts layer for business-ready dimensional models
-- Automated testing for data quality
-- Macro functions for reusable SQL logic
-- Comprehensive documentation generation
 
 ### Data Processing Pipeline
 1. **Data Extraction**: Concurrent API calls with rate limiting
