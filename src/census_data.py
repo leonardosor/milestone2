@@ -206,7 +206,7 @@ class SimpleCensusETL:
                 "B01001I_005E": "hispanic_males_10_14",
                 "B01001A_020E": "white_females_10_14",
                 "B01001B_020E": "black_females_10_14",
-                "B01001I_020E": "hispanic_females_10_14",
+                "B01001I_020E": "hispanic_females_10_14"
             }
 
             variable_codes = list(census_variables.keys())
