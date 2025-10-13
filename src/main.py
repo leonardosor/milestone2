@@ -1,23 +1,4 @@
 #!/usr/bin/env python3
-"""
-Orchestrated ETL Controller
-===========================
-
-This script serves as the main orchestrator for the complete ETL system that runs
-data processing from multiple sources in the correct sequence:
-1. US Census Bureau API data collection (census_data.py)
-2. Urban Institute API data collection (urban_data.py)
-3. Coordinate to zipcode geocoding (location_data.py)
-
-Features:
-- Sequential processing pipeline
-- Centralized year control
-- PostgreSQL database integration
-- Comprehensive error handling
-- Progress tracking and logging
-- Configurable parameters for each stage
-
-"""
 
 import argparse
 import asyncio
@@ -32,8 +13,6 @@ from typing import Any
 from census_data import SimpleCensusETL
 from location_data import fast_geocode_coordinates, test_geocoding_connection
 from urban_data import AsyncUrbanDataETL
-
-# Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s",
@@ -43,14 +22,11 @@ logging.basicConfig(
     ],
 )
 logger = logging.getLogger(__name__)
-
-# QA Configuration
 QA_MODE = os.getenv("QA_MODE", "false").lower() == "true"
 QA_BREAKPOINTS = os.getenv("QA_BREAKPOINTS", "false").lower() == "true"
 
 
 def qa_breakpoint(message: str, data: Any = None):
-    """QA breakpoint function for testing"""
     if QA_BREAKPOINTS:
         logger.info(f"QA BREAKPOINT: {message}")
         if data is not None:
@@ -65,21 +41,15 @@ def qa_breakpoint(message: str, data: Any = None):
 
 
 class OrchestatedETLController:
-    """Main ETL controller that orchestrates the complete data pipeline"""
-
     def __init__(self, config_file="config.json"):
-        """Initialize the orchestrated ETL controller"""
         self.config = self._load_config(config_file)
         self.census_etl = None
         self.urban_etl = None
         self._initialize_etl_components()
-
-        # Default year ranges from config
         self.census_years = self.config.get("etl", {}).get("census_years", [2015, 2019])
         self.urban_years = self.config.get("etl", {}).get("urban_years", [2020, 2023])
 
     def _load_config(self, config_file):
-        """Load configuration from JSON file"""
         try:
             with open(config_file, "r") as f:
                 config = json.load(f)
@@ -93,13 +63,9 @@ class OrchestatedETLController:
             raise
 
     def _initialize_etl_components(self):
-        """Initialize ETL components for different data sources"""
         try:
-            # Initialize Census ETL component
             self.census_etl = SimpleCensusETL(config_file="config.json")
             logger.info("Census ETL component initialized")
-
-            # Initialize Urban Institute ETL component
             self.urban_etl = AsyncUrbanDataETL(
                 config_file="config.json", drop_existing_tables=True
             )
@@ -110,9 +76,7 @@ class OrchestatedETLController:
             raise
 
     def run_census_etl(self, begin_year: int = None, end_year: int = None):
-        """Run Census ETL process"""
         try:
-            # Use provided years or default from config
             if begin_year is None:
                 begin_year = self.census_years[0]
             if end_year is None:
@@ -122,8 +86,6 @@ class OrchestatedETLController:
                 f"Starting Census ETL process for years {begin_year}-{end_year}"
             )
             qa_breakpoint("Starting Census ETL process", None)
-
-            # Run Census ETL using the modular component
             self.census_etl.run_etl(begin_year=begin_year, end_year=end_year)
             logger.info("Census ETL process completed successfully")
             return True
@@ -135,9 +97,7 @@ class OrchestatedETLController:
     async def run_urban_etl(
         self, begin_year: int = None, end_year: int = None, endpoints: list = None
     ):
-        """Run Urban Institute ETL process"""
         try:
-            # Use config defaults if no years specified
             if begin_year is None:
                 begin_year = self.urban_years[0]
             if end_year is None:
@@ -147,8 +107,6 @@ class OrchestatedETLController:
                 f"Starting Urban Institute ETL process for years {begin_year}-{end_year}"
             )
             qa_breakpoint("Starting Urban Institute ETL process", None)
-
-            # Run Urban Institute ETL using the modular component
             await self.urban_etl.run_etl_async(
                 begin_year=begin_year, end_year=end_year, endpoints=endpoints
             )
@@ -166,31 +124,20 @@ class OrchestatedETLController:
         table_name: str = "lat_lon_zipcode_fast",
         use_fast_method: bool = True,
     ):
-        """Run Location Data ETL process (coordinates to zipcodes)"""
         try:
             logger.info(f"Starting Location Data ETL process")
             qa_breakpoint("Starting Location Data ETL process", None)
 
             if use_fast_method:
-                # Use the fast geocoding method (reverse-geocoder)
                 logger.info("Using fast offline geocoding method")
-
-                # Test database connection first
                 if not test_geocoding_connection():
                     raise Exception("Database connection failed for fast location ETL")
-
-                # Run fast geocoding
                 success = fast_geocode_coordinates(table_name)
                 if not success:
                     raise Exception("Fast geocoding process failed")
 
             else:
-                # Use the original API-based method (slower)
                 logger.info("Using original API-based geocoding method (slower)")
-
-                # Test database connection first
-
-                # Slow geocoding path not implemented in this trimmed version.
                 logger.error(
                     "Original slow API-based geocoding method not implemented in this version."
                 )
@@ -220,15 +167,12 @@ class OrchestatedETLController:
         skip_location: bool = False,
         use_fast_geocoding: bool = True,
     ):
-        """Run the complete ETL pipeline in sequence"""
         try:
             pipeline_start = datetime.now()
             logger.info("Starting Complete ETL Pipeline")
             logger.info("=" * 60)
 
             qa_breakpoint("Starting complete ETL pipeline", None)
-
-            # Stage 1: Census Data ETL
             if not skip_census:
                 logger.info("STAGE 1: Census Data Collection")
                 logger.info("-" * 40)
@@ -236,8 +180,6 @@ class OrchestatedETLController:
                 logger.info("Stage 1 completed\n")
             else:
                 logger.info("Skipping Census ETL")
-
-            # Stage 2: Urban Institute Data ETL
             if not skip_urban:
                 logger.info("STAGE 2: Urban Institute Data Collection")
                 logger.info("-" * 40)
@@ -247,8 +189,6 @@ class OrchestatedETLController:
                 logger.info("Stage 2 completed\n")
             else:
                 logger.info("Skipping Urban ETL")
-
-            # Stage 3: Location Data ETL (coordinates to zipcodes)
             if not skip_location:
                 logger.info(
                     "STAGE 3: Location Data Processing (Coordinates → Zipcodes)"
@@ -263,8 +203,6 @@ class OrchestatedETLController:
                 logger.info("Stage 3 completed\n")
             else:
                 logger.info("Skipping Location ETL")
-
-            # Pipeline completion
             pipeline_end = datetime.now()
             duration = pipeline_end - pipeline_start
 
@@ -279,7 +217,6 @@ class OrchestatedETLController:
             raise
 
     def get_etl_status(self):
-        """Get status of ETL components"""
         status = {
             "census_etl": "initialized" if self.census_etl else "not_initialized",
             "urban_etl": "initialized" if self.urban_etl else "not_initialized",
@@ -290,20 +227,15 @@ class OrchestatedETLController:
 
 
 async def main():
-    """Main async function to run the orchestrated ETL pipeline"""
     parser = argparse.ArgumentParser(
         description="Orchestrated ETL Controller for Complete Data Pipeline"
     )
-
-    # Census arguments
     parser.add_argument(
         "--census-begin-year", type=int, help="Start year for Census data fetch"
     )
     parser.add_argument(
         "--census-end-year", type=int, help="End year for Census data fetch"
     )
-
-    # Urban Institute arguments
     parser.add_argument(
         "--urban-begin-year", type=int, help="Start year for Urban Institute data fetch"
     )
@@ -315,8 +247,6 @@ async def main():
         nargs="+",
         help="Urban Institute endpoints to fetch (optional)",
     )
-
-    # Location data arguments
     parser.add_argument(
         "--location-batch-size",
         type=int,
@@ -339,8 +269,6 @@ async def main():
         action="store_true",
         help="Use original slow API-based geocoding instead of fast offline method",
     )
-
-    # Control arguments
     parser.add_argument(
         "--config", type=str, default="config.json", help="Configuration file path"
     )
@@ -353,8 +281,6 @@ async def main():
     parser.add_argument(
         "--status", action="store_true", help="Show ETL component status"
     )
-
-    # Pipeline control
     parser.add_argument(
         "--census-only", action="store_true", help="Run only Census ETL"
     )
@@ -379,18 +305,13 @@ async def main():
     )
 
     args = parser.parse_args()
-
-    # Set QA environment variables if specified
     if args.qa_mode:
         os.environ["QA_MODE"] = "true"
     if args.qa_breakpoints:
         os.environ["QA_BREAKPOINTS"] = "true"
 
     try:
-        # Initialize ETL controller
         etl_controller = OrchestatedETLController(args.config)
-
-        # Show status if requested
         if args.status:
             status = etl_controller.get_etl_status()
             logger.info("ETL Component Status:")
@@ -400,8 +321,6 @@ async def main():
             logger.info(f"   Census years: {status['config_years']['census']}")
             logger.info(f"   Urban years: {status['config_years']['urban']}")
             return
-
-        # Run specific ETL processes based on arguments
         if args.census_only:
             etl_controller.run_census_etl(args.census_begin_year, args.census_end_year)
 
@@ -419,7 +338,6 @@ async def main():
             )
 
         else:
-            # Run complete pipeline
             await etl_controller.run_complete_pipeline(
                 census_begin_year=args.census_begin_year,
                 census_end_year=args.census_end_year,

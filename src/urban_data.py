@@ -1,27 +1,4 @@
-"""Urban Institute ETL (one raw table + one expanded table per endpoint)
-
-Process:
-1. Reads endpoints from config.json (urban.endpoints).
-2. Ingests each endpoint/year into its own *raw* table:
-       <schema>.urban_<endpoint_key_sanitized>
-   Columns:
-       id SERIAL PK
-       year INTEGER NOT NULL
-       data_json JSONB NOT NULL (raw record)
-       data_hash VARCHAR(64) UNIQUE (sha256(endpoint_key + year + json))
-       fetched_at TIMESTAMP DEFAULT now()
-   Indexes: year (btree), data_json (GIN), data_hash (btree)
-   Dedup via ON CONFLICT (data_hash) DO NOTHING.
-
-3. (Optional) Builds an *expanded* table for each endpoint individually that flattens
-   scalar JSON keys into TEXT columns:
-       <schema>.urban_<endpoint_key_sanitized>_<suffix> (suffix default: expanded)
-   Columns:
-       id SERIAL PK
-       year INTEGER
-       fetched_at TIMESTAMP
-       one TEXT column per distinct JSON key present in that endpoint's raw JSON records
-"""
+"""Urban Institute ETL"""
 
 import argparse
 import asyncio
@@ -45,13 +22,13 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-try:  # wake lock (optional)
+try:
     from wakepy import keep  # type: ignore
 except ImportError:
     logger.error("wakepy is required. Install it with: pip install wakepy")
     sys.exit(1)
 
-DB_SCHEMA = None  # set after config load
+DB_SCHEMA = None
 
 
 def load_config(config_file: str) -> Dict:
@@ -171,10 +148,8 @@ class EndpointETL:
         )
         with self.engine.connect() as conn:
             conn.execute(text("SELECT 1"))
-        # Initialize table manager (supports optional dropping of existing tables)
         self.tables = EndpointTableManager(self.engine, drop_existing=drop_existing)
         self.tables.ensure_schema()
-        # Precompute endpoint template mapping
         self.urban_cfg = self.config.get("urban", {})
         self.endpoint_templates: Dict[str, str] = self.urban_cfg.get("endpoints", {})
         self.raw_table_names: Dict[str, str] = {}
@@ -194,17 +169,6 @@ class EndpointETL:
 
     @staticmethod
     def _derive_table_name_from_template(template: str, fallback_key: str) -> str:
-        """Derive a concise table name from an endpoint template path.
-
-        Rules:
-          - Remove leading / and split by '/'
-          - Drop generic segments: api, v1, schools
-          - Drop path params like {year}
-          - Keep up to last 5 meaningful segments
-          - Replace hyphens with underscores
-          - Prefix with 'urban_' and truncate to <= 55 chars (Postgres limit 63 incl schema)
-          - Fallback to sanitized key if result empty
-        """
         segs = [s for s in template.strip("/").split("/") if s]
         filtered: list[str] = []
         for s in segs:
@@ -216,11 +180,9 @@ class EndpointETL:
             filtered.append(low.replace("-", "_"))
         if not filtered:
             filtered = [sanitize_identifier(fallback_key)]
-        # limit segments length for very long names
         if len(filtered) > 5:
             filtered = filtered[-5:]
         candidate = "urban_" + "_".join(filtered)
-        # compress overly long segments if necessary
         if len(candidate) > 55:
             short_parts = []
             for part in filtered:
@@ -234,7 +196,7 @@ class EndpointETL:
         return sanitize_identifier(candidate)
 
     @staticmethod
-    def _giveup(e):  # pragma: no cover
+    def _giveup(e):
         return (
             isinstance(e, aiohttp.ClientResponseError)
             and 400 <= e.status < 500
@@ -319,7 +281,6 @@ class EndpointETL:
             endpoints_map = {
                 k: v for k, v in endpoints_map.items() if k in endpoint_subset
             }
-            # filter table name mapping accordingly
             self.raw_table_names = {
                 k: v for k, v in self.raw_table_names.items() if k in endpoints_map
             }
@@ -338,7 +299,7 @@ class EndpointETL:
             def dumps(obj):
                 return orjson.dumps(obj).decode()
 
-        except Exception:  # pragma: no cover
+        except Exception:
 
             def dumps(obj):
                 return json.dumps(obj)
@@ -444,20 +405,12 @@ class EndpointETL:
         }
         return stats
 
-    # ---- Expansion Phase (per-endpoint) ----
     def build_per_endpoint_expanded_tables(
         self,
         endpoint_keys: List[str],
         suffix: str = "expanded",
         drop_existing: bool = True,
     ):
-        """Create an expanded table for each endpoint individually.
-
-        For each raw table urban_<endpoint>, detect distinct JSON keys and create a new table:
-            <schema>.urban_<endpoint>_<suffix>
-        Only scalar values are extracted using ->>.
-        Returns list of metadata dicts for created tables.
-        """
         results = []
         with self.engine.connect() as conn:
             for ep_key in endpoint_keys:
@@ -467,7 +420,6 @@ class EndpointETL:
                 expanded_table = f"{raw_table}_{sanitize_identifier(suffix)}"
                 full_expanded = f"{DB_SCHEMA}.{expanded_table}"
                 logger.info(f"Expanding endpoint '{ep_key}' into {full_expanded}")
-                # Gather keys
                 try:
                     key_rows = conn.execute(
                         text(
@@ -475,7 +427,7 @@ class EndpointETL:
                         )
                     )
                     key_rows = key_rows.fetchall()
-                except Exception as e:  # pragma: no cover
+                except Exception as e:
                     logger.warning(f"Skipping expansion for {raw_table}: {e}")
                     continue
                 used_cols: set[str] = set()
@@ -485,7 +437,6 @@ class EndpointETL:
                     if orig_key is None:
                         continue
                     base = sanitize_identifier(str(orig_key))
-                    # Avoid collision with base columns; rename if necessary
                     if base in reserved:
                         base = f"{base}_json"
                     col = base
@@ -524,7 +475,7 @@ class EndpointETL:
                     try:
                         conn.execute(text(insert_sql))
                         conn.commit()
-                    except Exception as e:  # pragma: no cover
+                    except Exception as e:
                         logger.warning(f"Insert failed for {full_expanded}: {e}")
                 count_res = conn.execute(
                     text(f"SELECT COUNT(*) FROM {DB_SCHEMA}.{raw_table}")
@@ -619,7 +570,6 @@ async def main():
     try:
         if wake_ctx:
             logger.info("wakepy engaged; preventing sleep...")
-        # Use the wake context (if any) properly instead of assigning unused variable
         with wake_ctx or nullcontext():
             start = datetime.utcnow()
             stats = await etl.ingest(
