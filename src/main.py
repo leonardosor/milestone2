@@ -52,10 +52,10 @@ QA_BREAKPOINTS = os.getenv("QA_BREAKPOINTS", "false").lower() == "true"
 def qa_breakpoint(message: str, data: Any = None):
     """QA breakpoint function for testing"""
     if QA_BREAKPOINTS:
-        logger.info(f"🔍 QA BREAKPOINT: {message}")
+        logger.info(f"QA BREAKPOINT: {message}")
         if data is not None:
-            logger.info(f"📊 Data shape: {getattr(data, 'shape', 'N/A')}")
-            logger.info(f"📋 Data columns: {getattr(data, 'columns', 'N/A')}")
+            logger.info(f"Data shape: {getattr(data, 'shape', 'N/A')}")
+            logger.info(f"Data columns: {getattr(data, 'columns', 'N/A')}")
         if QA_MODE:
             import pdb
 
@@ -119,17 +119,17 @@ class OrchestatedETLController:
                 end_year = self.census_years[1]
 
             logger.info(
-                f"🏛️ Starting Census ETL process for years {begin_year}-{end_year}"
+                f"Starting Census ETL process for years {begin_year}-{end_year}"
             )
             qa_breakpoint("Starting Census ETL process", None)
 
             # Run Census ETL using the modular component
             self.census_etl.run_etl(begin_year=begin_year, end_year=end_year)
-            logger.info("✅ Census ETL process completed successfully")
+            logger.info("Census ETL process completed successfully")
             return True
 
         except Exception as e:
-            logger.error(f"❌ Census ETL process failed: {e}")
+            logger.error(f"Census ETL process failed: {e}")
             raise
 
     async def run_urban_etl(
@@ -144,7 +144,7 @@ class OrchestatedETLController:
                 end_year = self.urban_years[1]
 
             logger.info(
-                f"🏙️ Starting Urban Institute ETL process for years {begin_year}-{end_year}"
+                f"Starting Urban Institute ETL process for years {begin_year}-{end_year}"
             )
             qa_breakpoint("Starting Urban Institute ETL process", None)
 
@@ -152,11 +152,11 @@ class OrchestatedETLController:
             await self.urban_etl.run_etl_async(
                 begin_year=begin_year, end_year=end_year, endpoints=endpoints
             )
-            logger.info("✅ Urban Institute ETL process completed successfully")
+            logger.info("Urban Institute ETL process completed successfully")
             return True
 
         except Exception as e:
-            logger.error(f"❌ Urban Institute ETL process failed: {e}")
+            logger.error(f"Urban Institute ETL process failed: {e}")
             raise
 
     def run_location_etl(
@@ -168,12 +168,12 @@ class OrchestatedETLController:
     ):
         """Run Location Data ETL process (coordinates to zipcodes)"""
         try:
-            logger.info(f"📍 Starting Location Data ETL process")
+            logger.info(f"Starting Location Data ETL process")
             qa_breakpoint("Starting Location Data ETL process", None)
 
             if use_fast_method:
                 # Use the fast geocoding method (reverse-geocoder)
-                logger.info("🚀 Using fast offline geocoding method")
+                logger.info("Using fast offline geocoding method")
 
                 # Test database connection first
                 if not test_geocoding_connection():
@@ -186,7 +186,7 @@ class OrchestatedETLController:
 
             else:
                 # Use the original API-based method (slower)
-                logger.info("⚠️  Using original API-based geocoding method (slower)")
+                logger.info("Using original API-based geocoding method (slower)")
 
                 # Test database connection first
 
@@ -198,11 +198,11 @@ class OrchestatedETLController:
                     "Slow geocoding method is not available. Use the fast method (default)."
                 )
 
-            logger.info("✅ Location Data ETL process completed successfully")
+            logger.info("Location Data ETL process completed successfully")
             return True
 
         except Exception as e:
-            logger.error(f"❌ Location Data ETL process failed: {e}")
+            logger.error(f"Location Data ETL process failed: {e}")
             raise
 
     async def run_complete_pipeline(
@@ -223,35 +223,35 @@ class OrchestatedETLController:
         """Run the complete ETL pipeline in sequence"""
         try:
             pipeline_start = datetime.now()
-            logger.info("🚀 Starting Complete ETL Pipeline")
+            logger.info("Starting Complete ETL Pipeline")
             logger.info("=" * 60)
 
             qa_breakpoint("Starting complete ETL pipeline", None)
 
             # Stage 1: Census Data ETL
             if not skip_census:
-                logger.info("📊 STAGE 1: Census Data Collection")
+                logger.info("STAGE 1: Census Data Collection")
                 logger.info("-" * 40)
                 self.run_census_etl(census_begin_year, census_end_year)
-                logger.info("✅ Stage 1 completed\n")
+                logger.info("Stage 1 completed\n")
             else:
-                logger.info("⏭️ Skipping Census ETL")
+                logger.info("Skipping Census ETL")
 
             # Stage 2: Urban Institute Data ETL
             if not skip_urban:
-                logger.info("📊 STAGE 2: Urban Institute Data Collection")
+                logger.info("STAGE 2: Urban Institute Data Collection")
                 logger.info("-" * 40)
                 await self.run_urban_etl(
                     urban_begin_year, urban_end_year, urban_endpoints
                 )
-                logger.info("✅ Stage 2 completed\n")
+                logger.info("Stage 2 completed\n")
             else:
-                logger.info("⏭️ Skipping Urban ETL")
+                logger.info("Skipping Urban ETL")
 
             # Stage 3: Location Data ETL (coordinates to zipcodes)
             if not skip_location:
                 logger.info(
-                    "📊 STAGE 3: Location Data Processing (Coordinates → Zipcodes)"
+                    "STAGE 3: Location Data Processing (Coordinates → Zipcodes)"
                 )
                 logger.info("-" * 40)
                 self.run_location_etl(
@@ -260,22 +260,22 @@ class OrchestatedETLController:
                     location_table_name,
                     use_fast_method=use_fast_geocoding,
                 )
-                logger.info("✅ Stage 3 completed\n")
+                logger.info("Stage 3 completed\n")
             else:
-                logger.info("⏭️ Skipping Location ETL")
+                logger.info("Skipping Location ETL")
 
             # Pipeline completion
             pipeline_end = datetime.now()
             duration = pipeline_end - pipeline_start
 
             logger.info("=" * 60)
-            logger.info("🎉 COMPLETE ETL PIPELINE FINISHED SUCCESSFULLY!")
-            logger.info(f"⏱️ Total pipeline duration: {duration}")
-            logger.info(f"🏁 Completed at: {pipeline_end.strftime('%Y-%m-%d %H:%M:%S')}")
+            logger.info("COMPLETE ETL PIPELINE FINISHED SUCCESSFULLY!")
+            logger.info(f"Total pipeline duration: {duration}")
+            logger.info(f"Completed at: {pipeline_end.strftime('%Y-%m-%d %H:%M:%S')}")
             logger.info("=" * 60)
 
         except Exception as e:
-            logger.error(f"❌ Complete ETL pipeline failed: {e}")
+            logger.error(f"Complete ETL pipeline failed: {e}")
             raise
 
     def get_etl_status(self):
@@ -393,7 +393,7 @@ async def main():
         # Show status if requested
         if args.status:
             status = etl_controller.get_etl_status()
-            logger.info("📊 ETL Component Status:")
+            logger.info("ETL Component Status:")
             logger.info(f"   Census ETL: {status['census_etl']}")
             logger.info(f"   Urban ETL: {status['urban_etl']}")
             logger.info(f"   Location ETL: {status['location_etl']}")
@@ -435,10 +435,10 @@ async def main():
                 use_fast_geocoding=not args.use_slow_geocoding,
             )
 
-        logger.info("✅ Orchestrated ETL process completed successfully!")
+        logger.info("Orchestrated ETL process completed successfully!")
 
     except Exception as e:
-        logger.error(f"❌ Orchestrated ETL process failed: {e}")
+        logger.error(f"Orchestrated ETL process failed: {e}")
         sys.exit(1)
 
 

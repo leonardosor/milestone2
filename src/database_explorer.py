@@ -65,12 +65,12 @@ def create_database_connection():
         with engine.connect() as conn:
             result = conn.execute(text("SELECT version()"))
             version = result.fetchone()[0]
-            print(f"✅ Connected to PostgreSQL successfully!")
+            print(f"Connected to PostgreSQL successfully!")
             print(f"Database: {db_name} on {db_host}:{db_port}")
             print(f"PostgreSQL Version: {version.split(',')[0]}")
         return engine
     except Exception as e:
-        print(f"❌ Failed to connect to database: {e}")
+        print(f"Failed to connect to database: {e}")
         print(
             f"Connection string: postgresql://{db_user}:***@{db_host}:{db_port}/{db_name}"
         )
@@ -97,7 +97,7 @@ def list_schemas(engine):
             )
             schemas = [row[0] for row in result.fetchall()]
 
-            print(f"📚 Found {len(schemas)} user schemas:")
+            print(f"Found {len(schemas)} user schemas:")
             for i, schema in enumerate(schemas, 1):
                 print(f"  {i}. {schema}")
 
@@ -137,7 +137,7 @@ def list_tables_in_schema(engine, schema_name):
             tables = result.fetchall()
 
             if tables:
-                print(f"📋 Tables in schema '{schema_name}':")
+                print(f"Tables in schema '{schema_name}':")
                 for i, (table_name, column_count) in enumerate(tables, 1):
                     print(f"  {i}. {table_name} ({column_count} columns)")
             else:
@@ -178,9 +178,9 @@ def describe_table(engine, schema_name, table_name):
             )
             row_count = count_result.fetchone()[0]
 
-            print(f"🔍 Table: {schema_name}.{table_name}")
-            print(f"📊 Row count: {row_count:,}")
-            print(f"📋 Columns ({len(columns)}):")
+            print(f"Table: {schema_name}.{table_name}")
+            print(f"Row count: {row_count:,}")
+            print(f"Columns ({len(columns)}):")
             print("-" * 80)
 
             for col in columns:
@@ -209,14 +209,12 @@ def show_table_sample(engine, schema_name, table_name, limit=10):
         query = f"SELECT * FROM {schema_name}.{table_name} LIMIT {limit}"
         df = pd.read_sql(query, engine)
 
-        print(
-            f"📊 Sample data from {schema_name}.{table_name} (showing {len(df)} rows):"
-        )
+        print(f"Sample data from {schema_name}.{table_name} (showing {len(df)} rows):")
         print("-" * 80)
 
         if not df.empty:
             print(df.to_string(index=False))
-            print(f"\n📈 Data types:")
+            print(f"\nData types:")
             print(df.dtypes)
         else:
             print("No data found in table")
@@ -237,14 +235,14 @@ def execute_custom_query(engine, query, params=None):
         df = pd.read_sql(query, engine, params=params)
 
         if not df.empty:
-            print(f"✅ Query executed successfully! Returned {len(df)} rows")
+            print(f"Query executed successfully! Returned {len(df)} rows")
             print(df.to_string(index=False))
         else:
             print("Query executed successfully but returned no results")
 
         return df
     except Exception as e:
-        print(f"❌ Query execution failed: {e}")
+        print(f"Query execution failed: {e}")
         return None
 
 
@@ -278,7 +276,7 @@ def get_database_stats(engine):
             stats_result = conn.execute(text(stats_query))
             stats = stats_result.fetchone()
 
-            print("📊 Database Statistics")
+            print("Database Statistics")
             print("=" * 50)
             print(f"Database: {db_info[1]}")
             print(f"Size: {db_info[0]}")
@@ -319,7 +317,7 @@ def get_dataframe_for_notebook(engine, schema_name, table_name, limit=None):
 
 def display_connection_info():
     """Display current connection information"""
-    print("🔗 Current Database Connection Info:")
+    print("Current Database Connection Info:")
     print(f"Host: {os.getenv('DB_HOST', 'localhost (default)')}")
     print(f"Port: {os.getenv('DB_PORT', '5432 (default)')}")
     print(f"Database: {os.getenv('DB_NAME', 'milestone2 (default)')}")
@@ -327,7 +325,7 @@ def display_connection_info():
     print(
         f"Password: {'*' * len(os.getenv('DB_PASSWORD', '')) if os.getenv('DB_PASSWORD') else 'Not set'}"
     )
-    print("\n💡 Tip: Create a .env file to override these defaults")
+    print("\nTip: Create a .env file to override these defaults")
 
 
 def interactive_menu(engine):
@@ -339,7 +337,7 @@ def interactive_menu(engine):
 
     while True:
         print("\n" + "=" * 60)
-        print("🗄️  Database Schema Explorer Menu")
+        print("Database Schema Explorer Menu")
         print("=" * 60)
         print("1. List all schemas")
         print("2. Explore tables in a schema")
@@ -358,9 +356,9 @@ def interactive_menu(engine):
         # Show current DataFrame info if available
         if current_df is not None:
             print(
-                f"📊 Current DataFrame: {current_schema}.{current_table} ({current_df.shape[0]} rows × {current_df.shape[1]} columns)"
+                f"Current DataFrame: {current_schema}.{current_table} ({current_df.shape[0]} rows × {current_df.shape[1]} columns)"
             )
-            print(f"💾 Memory: {current_df.memory_usage(deep=True).sum() / 1024:.1f} KB")
+            print(f"Memory: {current_df.memory_usage(deep=True).sum() / 1024:.1f} KB")
         print("-" * 60)
 
         choice = input("Enter your choice (1-12): ").strip()
@@ -457,10 +455,10 @@ def interactive_menu(engine):
                                 current_schema = schema_name
                                 current_table = table_name
                                 print(
-                                    f"\n✅ DataFrame loaded successfully! Use options 9-10 to work with it."
+                                    f"\nDataFrame loaded successfully! Use options 9-10 to work with it."
                                 )
                             else:
-                                print(f"\n❌ Failed to load DataFrame")
+                                print(f"\nFailed to load DataFrame")
                         else:
                             print(f"Table '{table_name}' not found!")
                 else:
@@ -471,14 +469,14 @@ def interactive_menu(engine):
             if current_df is not None:
                 analyze_dataframe(current_df, current_schema, current_table)
             else:
-                print("❌ No DataFrame loaded. Please load a table first (option 8).")
+                print("No DataFrame loaded. Please load a table first (option 8).")
 
         elif choice == "10":
             # Export DataFrame
             if current_df is not None:
                 export_dataframe(current_df, current_schema, current_table)
             else:
-                print("❌ No DataFrame loaded. Please load a table first (option 8).")
+                print("No DataFrame loaded. Please load a table first (option 8).")
 
         elif choice == "11":
             # Filter DataFrame
@@ -487,10 +485,8 @@ def interactive_menu(engine):
                     current_df, current_schema, current_table
                 )
                 if filtered_df is not None:
-                    print(
-                        f"\n✅ Filtered DataFrame created with {len(filtered_df)} rows"
-                    )
-                    print("💡 You can now use option 9 to analyze the filtered data")
+                    print(f"\nFiltered DataFrame created with {len(filtered_df)} rows")
+                    print("You can now use option 9 to analyze the filtered data")
                     # Optionally replace current DataFrame with filtered one
                     replace = (
                         input(
@@ -501,16 +497,16 @@ def interactive_menu(engine):
                     )
                     if replace == "y":
                         current_df = filtered_df
-                        print("✅ Current DataFrame replaced with filtered version")
+                        print("Current DataFrame replaced with filtered version")
             else:
-                print("❌ No DataFrame loaded. Please load a table first (option 8).")
+                print("No DataFrame loaded. Please load a table first (option 8).")
 
         elif choice == "12":
-            print("👋 Goodbye!")
+            print("Goodbye!")
             break
 
         else:
-            print("❌ Invalid choice. Please enter a number between 1-12.")
+            print("Invalid choice. Please enter a number between 1-12.")
 
 
 def load_table_as_dataframe(engine, schema_name, table_name, limit=None):
@@ -526,54 +522,54 @@ def load_table_as_dataframe(engine, schema_name, table_name, limit=None):
         else:
             query = f"SELECT * FROM {schema_name}.{table_name}"
 
-        print(f"🔄 Loading table {schema_name}.{table_name} as DataFrame...")
+        print(f"Loading table {schema_name}.{table_name} as DataFrame...")
         df = pd.read_sql(query, engine)
 
-        print(f"✅ Successfully loaded {schema_name}.{table_name}")
-        print(f"📊 DataFrame shape: {df.shape[0]} rows × {df.shape[1]} columns")
-        print(f"📈 Data types:")
+        print(f"Successfully loaded {schema_name}.{table_name}")
+        print(f"DataFrame shape: {df.shape[0]} rows × {df.shape[1]} columns")
+        print(f"Data types:")
         print(df.dtypes)
 
         # Show basic statistics for numeric columns
         numeric_cols = df.select_dtypes(include=["number"]).columns
         if len(numeric_cols) > 0:
-            print(f"\n📊 Basic statistics for numeric columns:")
+            print(f"\nBasic statistics for numeric columns:")
             print(df[numeric_cols].describe())
 
         # Show memory usage
         memory_usage = df.memory_usage(deep=True).sum()
-        print(f"\n💾 Memory usage: {memory_usage / 1024:.2f} KB")
+        print(f"\nMemory usage: {memory_usage / 1024:.2f} KB")
 
         return df
 
     except Exception as e:
-        print(f"❌ Error loading table as DataFrame: {e}")
+        print(f"Error loading table as DataFrame: {e}")
         return None
 
 
 def save_dataframe_to_csv(df, schema_name, table_name):
     """Save DataFrame to CSV file"""
     if df is None or df.empty:
-        print("❌ No data to save")
+        print("No data to save")
         return False
 
     try:
         filename = f"{schema_name}_{table_name}_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.csv"
         df.to_csv(filename, index=False)
-        print(f"💾 DataFrame saved to: {filename}")
+        print(f"DataFrame saved to: {filename}")
         return True
     except Exception as e:
-        print(f"❌ Error saving DataFrame: {e}")
+        print(f"Error saving DataFrame: {e}")
         return False
 
 
 def export_dataframe(df, schema_name, table_name):
     """Export DataFrame to various formats"""
     if df is None or df.empty:
-        print("❌ No data to export")
+        print("No data to export")
         return False
 
-    print(f"\n📤 Export Options for {schema_name}.{table_name}:")
+    print(f"\nExport Options for {schema_name}.{table_name}:")
     print("1. CSV file")
     print("2. Excel file (.xlsx)")
     print("3. JSON file")
@@ -589,25 +585,25 @@ def export_dataframe(df, schema_name, table_name):
         if choice == "1":
             filename = f"{base_filename}.csv"
             df.to_csv(filename, index=False)
-            print(f"💾 Exported to CSV: {filename}")
+            print(f"Exported to CSV: {filename}")
             return True
 
         elif choice == "2":
             filename = f"{base_filename}.xlsx"
             df.to_excel(filename, index=False, engine="openpyxl")
-            print(f"💾 Exported to Excel: {filename}")
+            print(f"Exported to Excel: {filename}")
             return True
 
         elif choice == "3":
             filename = f"{base_filename}.json"
             df.to_json(filename, orient="records", indent=2)
-            print(f"💾 Exported to JSON: {filename}")
+            print(f"Exported to JSON: {filename}")
             return True
 
         elif choice == "4":
             filename = f"{base_filename}.parquet"
             df.to_parquet(filename, index=False)
-            print(f"💾 Exported to Parquet: {filename}")
+            print(f"Exported to Parquet: {filename}")
             return True
 
         elif choice == "5":
@@ -615,21 +611,21 @@ def export_dataframe(df, schema_name, table_name):
             return False
 
         else:
-            print("❌ Invalid choice")
+            print("Invalid choice")
             return False
 
     except Exception as e:
-        print(f"❌ Error exporting DataFrame: {e}")
+        print(f"Error exporting DataFrame: {e}")
         return False
 
 
 def filter_dataframe(df, schema_name, table_name):
     """Filter DataFrame based on user input"""
     if df is None or df.empty:
-        print("❌ No DataFrame to filter")
+        print("No DataFrame to filter")
         return None
 
-    print(f"\n🔍 Filter DataFrame: {schema_name}.{table_name}")
+    print(f"\nFilter DataFrame: {schema_name}.{table_name}")
     print("=" * 50)
 
     # Show available columns
@@ -644,10 +640,10 @@ def filter_dataframe(df, schema_name, table_name):
         if 0 <= col_idx < len(df.columns):
             column = df.columns[col_idx]
         else:
-            print("❌ Invalid column number")
+            print("Invalid column number")
             return None
     except ValueError:
-        print("❌ Please enter a valid number")
+        print("Please enter a valid number")
         return None
 
     # Get filter value
@@ -661,7 +657,7 @@ def filter_dataframe(df, schema_name, table_name):
                 filter_value = float(filter_value)
                 filtered_df = df[df[column] == filter_value]
             except ValueError:
-                print("❌ Invalid numeric value")
+                print("Invalid numeric value")
                 return None
         else:
             # String comparison
@@ -670,50 +666,50 @@ def filter_dataframe(df, schema_name, table_name):
             ]
 
         print(
-            f"✅ Filter applied: {len(filtered_df)} rows match '{column}' = '{filter_value}'"
+            f"Filter applied: {len(filtered_df)} rows match '{column}' = '{filter_value}'"
         )
-        print(f"📊 Original: {len(df)} rows, Filtered: {len(filtered_df)} rows")
+        print(f"Original: {len(df)} rows, Filtered: {len(filtered_df)} rows")
 
         return filtered_df
 
     except Exception as e:
-        print(f"❌ Error applying filter: {e}")
+        print(f"Error applying filter: {e}")
         return None
 
 
 def analyze_dataframe(df, schema_name, table_name):
     """Provide comprehensive analysis of the DataFrame"""
     if df is None or df.empty:
-        print("❌ No data to analyze")
+        print("No data to analyze")
         return
 
-    print(f"\n🔍 DataFrame Analysis: {schema_name}.{table_name}")
+    print(f"\nDataFrame Analysis: {schema_name}.{table_name}")
     print("=" * 60)
 
     # Basic info
-    print(f"📊 Shape: {df.shape[0]} rows × {df.shape[1]} columns")
-    print(f"💾 Memory usage: {df.memory_usage(deep=True).sum() / 1024:.2f} KB")
+    print(f"Shape: {df.shape[0]} rows × {df.shape[1]} columns")
+    print(f"Memory usage: {df.memory_usage(deep=True).sum() / 1024:.2f} KB")
 
     # Column types
-    print(f"\n📋 Column Types:")
+    print(f"\nColumn Types:")
     for col, dtype in df.dtypes.items():
         print(f"  {col:<25} {dtype}")
 
     # Missing values
     missing_values = df.isnull().sum()
     if missing_values.sum() > 0:
-        print(f"\n⚠️  Missing Values:")
+        print(f"\nMissing Values:")
         for col, missing in missing_values.items():
             if missing > 0:
                 percentage = (missing / len(df)) * 100
                 print(f"  {col:<25} {missing:,} ({percentage:.1f}%)")
     else:
-        print(f"\n✅ No missing values found")
+        print(f"\nNo missing values found")
 
     # Unique values for categorical columns
     categorical_cols = df.select_dtypes(include=["object", "category"]).columns
     if len(categorical_cols) > 0:
-        print(f"\n🏷️  Categorical Columns (first 5 unique values):")
+        print(f"\nCategorical Columns (first 5 unique values):")
         for col in categorical_cols[
             :5
         ]:  # Limit to first 5 to avoid overwhelming output
@@ -725,24 +721,24 @@ def analyze_dataframe(df, schema_name, table_name):
     # Numeric columns statistics
     numeric_cols = df.select_dtypes(include=["number"]).columns
     if len(numeric_cols) > 0:
-        print(f"\n📈 Numeric Columns Statistics:")
+        print(f"\nNumeric Columns Statistics:")
         print(df[numeric_cols].describe())
 
     # Sample data
-    print(f"\n📊 Sample Data (first 5 rows):")
+    print(f"\nSample Data (first 5 rows):")
     print(df.head().to_string(index=False))
 
 
 def main():
     """Main function"""
-    print("🗄️  Database Schema Explorer")
+    print("Database Schema Explorer")
     print("=" * 50)
 
     # Create database connection
     engine = create_database_connection()
 
     if not engine:
-        print("\n❌ Failed to establish database connection.")
+        print("\nFailed to establish database connection.")
         print("Please check your database credentials and try again.")
         print("\nYou can create a .env file with the following content:")
         print("DB_HOST=localhost")
