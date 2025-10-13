@@ -1,10 +1,5 @@
 #!/usr/bin/env python3
-"""
-================================================
-
-This script provides ETL functionality for Census API data.
-Maintains logging and core functionality while being easier to debug.
-"""
+"""Census API ETL"""
 
 import argparse
 import json
@@ -18,10 +13,9 @@ import censusdata
 import pandas as pd
 from sqlalchemy import create_engine, text
 
-# Database schema configuration - read from config file
-DB_SCHEMA = None  # Will be set from config
+DB_SCHEMA = None
 
-# Configure logging
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s",
@@ -34,14 +28,8 @@ logger = logging.getLogger(__name__)
 
 
 class SimpleCensusETL:
-    """Simplified ETL class for Census data to PostgreSQL"""
 
     def __init__(self, config_file="config.json"):
-        """Initialize the ETL process with configuration.
-        If the provided config_file is relative and not found in the current
-        working directory, we attempt to discover it by searching parent
-        directories (up to 5 levels) relative to this script's location.
-        """
         resolved = self._resolve_config_path(config_file)
         if resolved != config_file:
             logger.info(f"🔍 Resolved config file: {resolved}")
@@ -51,13 +39,10 @@ class SimpleCensusETL:
         self.engine = None
 
     def _resolve_config_path(self, path: str) -> str:
-        # Absolute path supplied and exists
         if os.path.isabs(path) and os.path.isfile(path):
             return path
-        # If relative and exists in CWD, use it
         if not os.path.isabs(path) and os.path.isfile(path):
             return os.path.abspath(path)
-        # Search upward from script directory
         script_dir = os.path.dirname(os.path.abspath(__file__))
         candidates = []
         for depth in range(0, 6):
@@ -68,16 +53,14 @@ class SimpleCensusETL:
             if os.path.isfile(candidate):
                 return candidate
         logger.debug("Config file not found in candidates: " + "; ".join(candidates))
-        return path  # Let _load_config handle fallback
+        return path
 
     def _load_config(self, config_file):
-        """Load configuration from JSON file or use defaults"""
         global DB_SCHEMA
         try:
             with open(config_file, "r") as f:
                 config = json.load(f)
             logger.info(f"✅ Configuration loaded: {config_file}")
-            # Set global schema from config
             DB_SCHEMA = config.get("schema", "public")
             return config
         except FileNotFoundError:
@@ -89,9 +72,7 @@ class SimpleCensusETL:
             raise
 
     def connect_to_database(self):
-        """Establish connection to PostgreSQL database"""
         try:
-            # Always use local database for simplicity
             db_creds = self.config.get("local_database", {})
 
             if not db_creds or not all(
@@ -110,11 +91,9 @@ class SimpleCensusETL:
 
             self.engine = create_engine(connection_string)
 
-            # Test connection
             with self.engine.connect() as conn:
                 conn.execute(text("SELECT 1"))
 
-            # Ensure target schema exists
             if DB_SCHEMA:
                 try:
                     with self.engine.connect() as conn:
@@ -138,7 +117,6 @@ class SimpleCensusETL:
             raise
 
     def create_tables(self):
-        """Create database tables"""
         try:
             with self.engine.connect() as conn:
                 logger.info("🗄️ Creating database tables...")
