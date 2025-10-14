@@ -1,19 +1,4 @@
 #!/usr/bin/env python3
-"""
-Database Schema Explorer
-========================
-
-This script allows you to explore tables in a PostgreSQL database schema.
-You can:
-- Connect to your local database using environment variables
-- List all schemas in the database
-- Explore tables within a specific schema
-- View table structure and sample data
-- Execute custom SQL queries
-
-Usage:
-    python database_explorer.py
-"""
 
 import os
 import warnings
@@ -24,21 +9,16 @@ from sqlalchemy import create_engine, text
 
 warnings.filterwarnings("ignore")
 
-# Load environment variables
 load_dotenv()
 
 
 def create_database_connection():
-    """Create database connection using environment variables or config"""
-
-    # Try to get connection details from environment variables first
     db_host = os.getenv("DB_HOST", "localhost")
     db_port = os.getenv("DB_PORT", "5432")
     db_name = os.getenv("DB_NAME", "milestone2")
     db_user = os.getenv("DB_USER", "postgres")
     db_password = os.getenv("DB_PASSWORD", "123")
 
-    # If environment variables are not set, try to load from config.json
     if db_password == "123" and os.path.exists("config.json"):
         import json
 
@@ -54,14 +34,12 @@ def create_database_connection():
         except Exception as e:
             print(f"Warning: Could not load config.json: {e}")
 
-    # Create connection string
     connection_string = (
         f"postgresql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
     )
 
     try:
         engine = create_engine(connection_string)
-        # Test connection
         with engine.connect() as conn:
             result = conn.execute(text("SELECT version()"))
             version = result.fetchone()[0]
@@ -78,7 +56,6 @@ def create_database_connection():
 
 
 def list_schemas(engine):
-    """List all schemas in the database"""
     if not engine:
         print("No database connection available")
         return []
@@ -108,7 +85,6 @@ def list_schemas(engine):
 
 
 def list_tables_in_schema(engine, schema_name):
-    """List all tables in a specific schema"""
     if not engine:
         print("No database connection available")
         return []
@@ -150,14 +126,12 @@ def list_tables_in_schema(engine, schema_name):
 
 
 def describe_table(engine, schema_name, table_name):
-    """Show detailed information about a specific table"""
     if not engine:
         print("No database connection available")
         return
 
     try:
         with engine.connect() as conn:
-            # Get column information
             columns_result = conn.execute(
                 text(
                     """
@@ -172,7 +146,6 @@ def describe_table(engine, schema_name, table_name):
 
             columns = columns_result.fetchall()
 
-            # Get row count
             count_result = conn.execute(
                 text(f"SELECT COUNT(*) FROM {schema_name}.{table_name}")
             )
@@ -200,7 +173,6 @@ def describe_table(engine, schema_name, table_name):
 
 
 def show_table_sample(engine, schema_name, table_name, limit=10):
-    """Show sample data from a table"""
     if not engine:
         print("No database connection available")
         return None
@@ -226,7 +198,6 @@ def show_table_sample(engine, schema_name, table_name, limit=10):
 
 
 def execute_custom_query(engine, query, params=None):
-    """Execute a custom SQL query"""
     if not engine:
         print("No database connection available")
         return None
@@ -247,14 +218,12 @@ def execute_custom_query(engine, query, params=None):
 
 
 def get_database_stats(engine):
-    """Get comprehensive database statistics"""
     if not engine:
         print("No database connection available")
         return
 
     try:
         with engine.connect() as conn:
-            # Get database size
             size_query = """
             SELECT
                 pg_size_pretty(pg_database_size(current_database())) as database_size,
@@ -263,7 +232,6 @@ def get_database_stats(engine):
             size_result = conn.execute(text(size_query))
             db_info = size_result.fetchone()
 
-            # Get schema and table counts
             stats_query = """
             SELECT
                 COUNT(DISTINCT table_schema) as schema_count,
@@ -290,7 +258,6 @@ def get_database_stats(engine):
 
 
 def get_dataframe_for_notebook(engine, schema_name, table_name, limit=None):
-    """Load a table as DataFrame and return it for notebook use"""
     if not engine:
         print("No database connection available")
         return None
@@ -316,7 +283,6 @@ def get_dataframe_for_notebook(engine, schema_name, table_name, limit=None):
 
 
 def display_connection_info():
-    """Display current connection information"""
     print("Current Database Connection Info:")
     print(f"Host: {os.getenv('DB_HOST', 'localhost (default)')}")
     print(f"Port: {os.getenv('DB_PORT', '5432 (default)')}")
@@ -329,8 +295,6 @@ def display_connection_info():
 
 
 def interactive_menu(engine):
-    """Interactive menu for database exploration"""
-    # Global variable to store the current DataFrame
     current_df = None
     current_schema = None
     current_table = None
@@ -353,7 +317,6 @@ def interactive_menu(engine):
         print("12. Exit")
         print("-" * 60)
 
-        # Show current DataFrame info if available
         if current_df is not None:
             print(
                 f"Current DataFrame: {current_schema}.{current_table} ({current_df.shape[0]} rows × {current_df.shape[1]} columns)"
@@ -446,7 +409,6 @@ def interactive_menu(engine):
                             ).strip()
                             limit = int(limit_input) if limit_input.isdigit() else None
 
-                            # Load the DataFrame
                             df = load_table_as_dataframe(
                                 engine, schema_name, table_name, limit
                             )
@@ -465,21 +427,18 @@ def interactive_menu(engine):
                     print(f"Schema '{schema_name}' not found!")
 
         elif choice == "9":
-            # Analyze current DataFrame
             if current_df is not None:
                 analyze_dataframe(current_df, current_schema, current_table)
             else:
                 print("No DataFrame loaded. Please load a table first (option 8).")
 
         elif choice == "10":
-            # Export DataFrame
             if current_df is not None:
                 export_dataframe(current_df, current_schema, current_table)
             else:
                 print("No DataFrame loaded. Please load a table first (option 8).")
 
         elif choice == "11":
-            # Filter DataFrame
             if current_df is not None:
                 filtered_df = filter_dataframe(
                     current_df, current_schema, current_table
@@ -487,7 +446,6 @@ def interactive_menu(engine):
                 if filtered_df is not None:
                     print(f"\nFiltered DataFrame created with {len(filtered_df)} rows")
                     print("You can now use option 9 to analyze the filtered data")
-                    # Optionally replace current DataFrame with filtered one
                     replace = (
                         input(
                             "Replace current DataFrame with filtered version? (y/n): "
@@ -510,7 +468,6 @@ def interactive_menu(engine):
 
 
 def load_table_as_dataframe(engine, schema_name, table_name, limit=None):
-    """Load a table as a pandas DataFrame"""
     if not engine:
         print("No database connection available")
         return None
@@ -530,13 +487,11 @@ def load_table_as_dataframe(engine, schema_name, table_name, limit=None):
         print(f"Data types:")
         print(df.dtypes)
 
-        # Show basic statistics for numeric columns
         numeric_cols = df.select_dtypes(include=["number"]).columns
         if len(numeric_cols) > 0:
             print(f"\nBasic statistics for numeric columns:")
             print(df[numeric_cols].describe())
 
-        # Show memory usage
         memory_usage = df.memory_usage(deep=True).sum()
         print(f"\nMemory usage: {memory_usage / 1024:.2f} KB")
 
@@ -548,7 +503,6 @@ def load_table_as_dataframe(engine, schema_name, table_name, limit=None):
 
 
 def save_dataframe_to_csv(df, schema_name, table_name):
-    """Save DataFrame to CSV file"""
     if df is None or df.empty:
         print("No data to save")
         return False
@@ -564,7 +518,6 @@ def save_dataframe_to_csv(df, schema_name, table_name):
 
 
 def export_dataframe(df, schema_name, table_name):
-    """Export DataFrame to various formats"""
     if df is None or df.empty:
         print("No data to export")
         return False
@@ -620,7 +573,6 @@ def export_dataframe(df, schema_name, table_name):
 
 
 def filter_dataframe(df, schema_name, table_name):
-    """Filter DataFrame based on user input"""
     if df is None or df.empty:
         print("No DataFrame to filter")
         return None
@@ -628,12 +580,10 @@ def filter_dataframe(df, schema_name, table_name):
     print(f"\nFilter DataFrame: {schema_name}.{table_name}")
     print("=" * 50)
 
-    # Show available columns
     print("Available columns:")
     for i, col in enumerate(df.columns, 1):
         print(f"  {i}. {col} ({df[col].dtype})")
 
-    # Get column to filter on
     col_choice = input("\nEnter column number to filter on: ").strip()
     try:
         col_idx = int(col_choice) - 1
@@ -646,13 +596,10 @@ def filter_dataframe(df, schema_name, table_name):
         print("Please enter a valid number")
         return None
 
-    # Get filter value
     filter_value = input(f"Enter value to filter '{column}' on: ").strip()
 
     try:
-        # Apply filter
         if df[column].dtype in ["int64", "float64"]:
-            # Numeric comparison
             try:
                 filter_value = float(filter_value)
                 filtered_df = df[df[column] == filter_value]
@@ -660,7 +607,6 @@ def filter_dataframe(df, schema_name, table_name):
                 print("Invalid numeric value")
                 return None
         else:
-            # String comparison
             filtered_df = df[
                 df[column].astype(str).str.contains(filter_value, case=False, na=False)
             ]
@@ -678,7 +624,6 @@ def filter_dataframe(df, schema_name, table_name):
 
 
 def analyze_dataframe(df, schema_name, table_name):
-    """Provide comprehensive analysis of the DataFrame"""
     if df is None or df.empty:
         print("No data to analyze")
         return
@@ -686,16 +631,13 @@ def analyze_dataframe(df, schema_name, table_name):
     print(f"\nDataFrame Analysis: {schema_name}.{table_name}")
     print("=" * 60)
 
-    # Basic info
     print(f"Shape: {df.shape[0]} rows × {df.shape[1]} columns")
     print(f"Memory usage: {df.memory_usage(deep=True).sum() / 1024:.2f} KB")
 
-    # Column types
     print(f"\nColumn Types:")
     for col, dtype in df.dtypes.items():
         print(f"  {col:<25} {dtype}")
 
-    # Missing values
     missing_values = df.isnull().sum()
     if missing_values.sum() > 0:
         print(f"\nMissing Values:")
@@ -706,35 +648,28 @@ def analyze_dataframe(df, schema_name, table_name):
     else:
         print(f"\nNo missing values found")
 
-    # Unique values for categorical columns
     categorical_cols = df.select_dtypes(include=["object", "category"]).columns
     if len(categorical_cols) > 0:
         print(f"\nCategorical Columns (first 5 unique values):")
-        for col in categorical_cols[
-            :5
-        ]:  # Limit to first 5 to avoid overwhelming output
+        for col in categorical_cols[:5]:
             unique_vals = df[col].nunique()
             print(f"  {col:<25} {unique_vals:,} unique values")
             if unique_vals <= 10:
                 print(f"    Values: {sorted(df[col].dropna().unique())}")
 
-    # Numeric columns statistics
     numeric_cols = df.select_dtypes(include=["number"]).columns
     if len(numeric_cols) > 0:
         print(f"\nNumeric Columns Statistics:")
         print(df[numeric_cols].describe())
 
-    # Sample data
     print(f"\nSample Data (first 5 rows):")
     print(df.head().to_string(index=False))
 
 
 def main():
-    """Main function"""
     print("Database Schema Explorer")
     print("=" * 50)
 
-    # Create database connection
     engine = create_database_connection()
 
     if not engine:
@@ -748,10 +683,8 @@ def main():
         print("DB_PASSWORD=your_password")
         return
 
-    # Display connection info
     display_connection_info()
 
-    # Start interactive menu
     interactive_menu(engine)
 
 

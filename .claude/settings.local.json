@@ -1,7 +1,7 @@
 {
   "permissions": {
     "allow": [
-      "Bash(python -c \"\nimport re\n\nfiles_to_check = [\n    ''location_data.py'',\n    ''main.py'',\n    ''urban_data.py'',\n    ''fix_shap.py''\n]\n\nemoji_pattern = re.compile(r''[\\U0001F300-\\U0001F9FF]'')\n\nfor filename in files_to_check:\n    try:\n        with open(filename, ''r'', encoding=''utf-8'') as f:\n            content = f.read()\n            emojis = emoji_pattern.findall(content)\n            print(f''{filename}: {len(emojis)} emojis found'')\n            if emojis:\n                unique_emojis = set(emojis)\n                print(f''  Unique emojis: {unique_emojis}'')\n    except Exception as e:\n        print(f''{filename}: Error - {e}'')\n\")"
+      "Bash(where python3)"
     ],
     "deny": [],
     "ask": []
