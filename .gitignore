@@ -44,3 +44,8 @@ Thumbs.db
 
 *supervised*
 dbt_project/target/
+
+# Claude/AI settings
+.claude/
+.claude/**
+*.claude.*

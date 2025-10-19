@@ -10,6 +10,7 @@ import sys
 from contextlib import nullcontext
 from datetime import datetime
 from typing import Dict, List
+from wakepy import keep  # type: ignore
 
 import aiohttp
 import backoff
@@ -22,49 +23,38 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-try:
-    from wakepy import keep  # type: ignore
-except ImportError:
-    logger.error("wakepy is required. Install it with: pip install wakepy")
-    sys.exit(1)
-
 DB_SCHEMA = None
 
 
 def load_config(config_file: str) -> Dict:
     global DB_SCHEMA
-    search = []
     if os.path.isabs(config_file):
-        search.append(config_file)
+        search = [config_file]
     else:
         cwd = os.getcwd()
         script_dir = os.path.dirname(os.path.abspath(__file__))
-        search.extend(
-            [
-                os.path.join(cwd, config_file),
-                os.path.join(script_dir, config_file),
-                os.path.join(os.path.dirname(script_dir), config_file),
-            ]
-        )
-    last_err = None
+        search = [
+            os.path.join(cwd, config_file),
+            os.path.join(script_dir, config_file),
+            os.path.join(os.path.dirname(script_dir), config_file),
+        ]
+
     for p in search:
+        if not os.path.exists(p):
+            continue
         try:
-            if os.path.exists(p):
-                with open(p, "r", encoding="utf-8") as f:
-                    cfg = json.load(f)
-                DB_SCHEMA = cfg.get("schema")
-                if not DB_SCHEMA:
-                    raise ValueError("Missing 'schema' in config.json")
-                logger.info(f"Loaded config from {p}")
-                return cfg
+            with open(p, "r", encoding="utf-8") as f:
+                cfg = json.load(f)
+            DB_SCHEMA = cfg.get("schema")
+            if not DB_SCHEMA:
+                raise ValueError("Missing 'schema' in config.json")
+            logger.info(f"Loaded config from {p}")
+            return cfg
         except json.JSONDecodeError as e:
             logger.error(f"Invalid JSON in {p}: {e}")
             raise
-        except Exception as e:
-            last_err = e
+
     logger.error("Configuration file not found. Tried: " + ", ".join(search))
-    if last_err:
-        raise last_err
     raise FileNotFoundError(config_file)
 
 
@@ -170,30 +160,22 @@ class EndpointETL:
     @staticmethod
     def _derive_table_name_from_template(template: str, fallback_key: str) -> str:
         segs = [s for s in template.strip("/").split("/") if s]
-        filtered: list[str] = []
-        for s in segs:
-            low = s.lower()
-            if low in {"api", "v1", "schools"}:
-                continue
-            if low.startswith("{") and low.endswith("}"):
-                continue
-            filtered.append(low.replace("-", "_"))
+        filtered = [
+            s.lower().replace("-", "_") for s in segs
+            if s.lower() not in {"api", "v1", "schools"}
+            and not (s.lower().startswith("{") and s.lower().endswith("}"))
+        ]
         if not filtered:
             filtered = [sanitize_identifier(fallback_key)]
-        if len(filtered) > 5:
-            filtered = filtered[-5:]
+
+        filtered = filtered[-5:] if len(filtered) > 5 else filtered
         candidate = "urban_" + "_".join(filtered)
+
         if len(candidate) > 55:
-            short_parts = []
-            for part in filtered:
-                if len(part) > 12:
-                    short_parts.append(part[:8])
-                else:
-                    short_parts.append(part)
-            candidate = "urban_" + "_".join(short_parts)
-        if len(candidate) > 60:
-            candidate = candidate[:60]
-        return sanitize_identifier(candidate)
+            filtered = [p[:8] if len(p) > 12 else p for p in filtered]
+            candidate = "urban_" + "_".join(filtered)
+
+        return sanitize_identifier(candidate[:60])
 
     @staticmethod
     def _giveup(e):
@@ -222,19 +204,13 @@ class EndpointETL:
             return await resp.json()
 
     async def _fetch_all(
-        self,
-        session,
-        base_url: str,
-        endpoint_template: str,
-        year: int,
-        page_delay: float,
-        max_pages: int | None,
+        self, session, base_url: str, endpoint_template: str,
+        year: int, page_delay: float, max_pages: int | None
     ) -> list:
         ep = endpoint_template.format(year=year)
-        url = f"{base_url}{ep}"
-        results = []
-        page = 0
-        next_url = url
+        results, page = [], 0
+        next_url = f"{base_url}{ep}"
+
         while next_url and (max_pages is None or page < max_pages):
             page += 1
             try:
@@ -242,21 +218,19 @@ class EndpointETL:
             except Exception as e:
                 logger.error(f"Failed {ep} page {page}: {e}")
                 break
+
             page_results = data.get("results", [])
             results.extend(page_results)
-            if page == 1:
-                logger.info(f"{ep} {year}: page {page} -> {len(page_results)} records")
-            else:
-                logger.debug(
-                    f"{ep} {year}: page {page} -> {len(page_results)} (cumulative {len(results)})"
-                )
+
+            log_fn = logger.info if page == 1 else logger.debug
+            log_msg = f"{ep} {year}: page {page} -> {len(page_results)} records"
+            if page > 1:
+                log_msg += f" (cumulative {len(results)})"
+            log_fn(log_msg)
+
             nxt = data.get("next")
             if nxt:
-                next_url = (
-                    nxt
-                    if nxt.startswith("http")
-                    else f"{base_url.rstrip('/')}/{nxt.lstrip('/')}"
-                )
+                next_url = nxt if nxt.startswith("http") else f"{base_url.rstrip('/')}/{nxt.lstrip('/')}"
                 await asyncio.sleep(page_delay)
             else:
                 next_url = None
@@ -304,8 +278,26 @@ class EndpointETL:
             def dumps(obj):
                 return json.dumps(obj)
 
-        async def writer():
+        def format_records(records):
+            return [
+                {
+                    "year": r["year"],
+                    "data_json": r["data_json"],
+                    "data_hash": r["data_hash"],
+                    "fetched_at": r["fetched_at"],
+                }
+                for r in records
+            ]
+
+        def flush_buffer(ep_key, records):
             nonlocal total_inserted
+            self.tables.ensure_table(ep_key, self.raw_table_names[ep_key])
+            inserted = self.tables.bulk_insert(
+                ep_key, format_records(records), table_name=self.raw_table_names[ep_key]
+            )
+            total_inserted += inserted
+
+        async def writer():
             buffer_per_endpoint: Dict[str, list] = {}
             while True:
                 item = await queue.get()
@@ -314,39 +306,12 @@ class EndpointETL:
                 ep_key = item["endpoint_key"]
                 buffer_per_endpoint.setdefault(ep_key, []).append(item)
                 if len(buffer_per_endpoint[ep_key]) >= flush_threshold:
-                    self.tables.ensure_table(ep_key, self.raw_table_names[ep_key])
-                    inserted = self.tables.bulk_insert(
-                        ep_key,
-                        [
-                            {
-                                "year": r["year"],
-                                "data_json": r["data_json"],
-                                "data_hash": r["data_hash"],
-                                "fetched_at": r["fetched_at"],
-                            }
-                            for r in buffer_per_endpoint[ep_key]
-                        ],
-                        table_name=self.raw_table_names[ep_key],
-                    )
-                    total_inserted += inserted
+                    flush_buffer(ep_key, buffer_per_endpoint[ep_key])
                     buffer_per_endpoint[ep_key].clear()
+
             for ep_key, buf in buffer_per_endpoint.items():
                 if buf:
-                    self.tables.ensure_table(ep_key, self.raw_table_names[ep_key])
-                    inserted = self.tables.bulk_insert(
-                        ep_key,
-                        [
-                            {
-                                "year": r["year"],
-                                "data_json": r["data_json"],
-                                "data_hash": r["data_hash"],
-                                "fetched_at": r["fetched_at"],
-                            }
-                            for r in buf
-                        ],
-                        table_name=self.raw_table_names[ep_key],
-                    )
-                    total_inserted += inserted
+                    flush_buffer(ep_key, buf)
             logger.info(f"Writer finished. Total inserted (unique): {total_inserted}")
 
         async def process(
@@ -411,6 +376,16 @@ class EndpointETL:
         suffix: str = "expanded",
         drop_existing: bool = True,
     ):
+        def resolve_column_name(orig_key: str, used_cols: set, reserved: set) -> str:
+            base = sanitize_identifier(str(orig_key))
+            if base in reserved:
+                base = f"{base}_json"
+            col, i = base, 1
+            while col in used_cols:
+                col = f"{base}_{i}"
+                i += 1
+            return col
+
         results = []
         with self.engine.connect() as conn:
             for ep_key in endpoint_keys:
@@ -420,56 +395,41 @@ class EndpointETL:
                 expanded_table = f"{raw_table}_{sanitize_identifier(suffix)}"
                 full_expanded = f"{DB_SCHEMA}.{expanded_table}"
                 logger.info(f"Expanding endpoint '{ep_key}' into {full_expanded}")
+
                 try:
                     key_rows = conn.execute(
-                        text(
-                            f"SELECT DISTINCT jsonb_object_keys(data_json) AS k FROM {DB_SCHEMA}.{raw_table}"
-                        )
-                    )
-                    key_rows = key_rows.fetchall()
+                        text(f"SELECT DISTINCT jsonb_object_keys(data_json) AS k FROM {DB_SCHEMA}.{raw_table}")
+                    ).fetchall()
                 except Exception as e:
                     logger.warning(f"Skipping expansion for {raw_table}: {e}")
                     continue
-                used_cols: set[str] = set()
-                key_map: Dict[str, str] = {}
+
+                used_cols, key_map = set(), {}
                 reserved = {"year", "fetched_at", "id"}
                 for (orig_key,) in key_rows:
                     if orig_key is None:
                         continue
-                    base = sanitize_identifier(str(orig_key))
-                    if base in reserved:
-                        base = f"{base}_json"
-                    col = base
-                    i = 1
-                    while col in used_cols:
-                        col = f"{base}_{i}"
-                        i += 1
+                    col = resolve_column_name(orig_key, used_cols, reserved)
                     used_cols.add(col)
                     key_map[orig_key] = col
+
                 if drop_existing:
                     conn.execute(text(f"DROP TABLE IF EXISTS {full_expanded} CASCADE;"))
-                col_defs = [
-                    "id SERIAL PRIMARY KEY",
-                    "year INTEGER",
-                    "fetched_at TIMESTAMP",
-                ] + [f'"{v}" TEXT' for v in sorted(key_map.values())]
-                ddl = f"CREATE TABLE {full_expanded} (" + ",".join(col_defs) + ");"
-                conn.execute(text(ddl))
-                conn.execute(
-                    text(
-                        f"CREATE INDEX idx_{expanded_table}_year ON {full_expanded}(year);"
-                    )
-                )
+
+                col_defs = ["id SERIAL PRIMARY KEY", "year INTEGER", "fetched_at TIMESTAMP"]
+                col_defs += [f'"{v}" TEXT' for v in sorted(key_map.values())]
+                conn.execute(text(f"CREATE TABLE {full_expanded} ({','.join(col_defs)});"))
+                conn.execute(text(f"CREATE INDEX idx_{expanded_table}_year ON {full_expanded}(year);"))
                 conn.commit()
+
                 if key_map:
-                    select_cols = []
-                    for orig, col in key_map.items():
-                        safe_key = str(orig).replace("'", "''")
-                        select_cols.append(f"data_json ->> '{safe_key}' AS \"{col}\"")
-                    select_list = ",".join(select_cols)
+                    select_cols = [
+                        f"data_json ->> '{str(orig).replace(chr(39), chr(39)*2)}' AS \"{col}\""
+                        for orig, col in key_map.items()
+                    ]
                     insert_sql = f"""
                     INSERT INTO {full_expanded} (year, fetched_at, {','.join(f'"{c}"' for c in key_map.values())})
-                    SELECT year, fetched_at, {select_list}
+                    SELECT year, fetched_at, {','.join(select_cols)}
                     FROM {DB_SCHEMA}.{raw_table};
                     """
                     try:
@@ -477,29 +437,21 @@ class EndpointETL:
                         conn.commit()
                     except Exception as e:
                         logger.warning(f"Insert failed for {full_expanded}: {e}")
-                count_res = conn.execute(
-                    text(f"SELECT COUNT(*) FROM {DB_SCHEMA}.{raw_table}")
-                )
-                raw_count = count_res.scalar() or 0
-                results.append(
-                    {
-                        "endpoint_key": ep_key,
-                        "raw_table": f"{DB_SCHEMA}.{raw_table}",
-                        "expanded_table": full_expanded,
-                        "column_count": len(key_map),
-                        "raw_row_count": raw_count,
-                    }
-                )
-                logger.info(
-                    f"Created expanded table {full_expanded} with {len(key_map)} JSON-derived columns"
-                )
+
+                raw_count = conn.execute(text(f"SELECT COUNT(*) FROM {DB_SCHEMA}.{raw_table}")).scalar() or 0
+                results.append({
+                    "endpoint_key": ep_key,
+                    "raw_table": f"{DB_SCHEMA}.{raw_table}",
+                    "expanded_table": full_expanded,
+                    "column_count": len(key_map),
+                    "raw_row_count": raw_count,
+                })
+                logger.info(f"Created expanded table {full_expanded} with {len(key_map)} JSON-derived columns")
         return results
 
 
 async def main():
-    parser = argparse.ArgumentParser(
-        description="Urban Institute ETL (one raw + one expanded table per endpoint)"
-    )
+    parser = argparse.ArgumentParser(description="Urban Institute ETL")
     parser.add_argument("--config", default="config.json", help="Path to config.json")
     parser.add_argument(
         "--begin-year", type=int, required=True, help="Start year (inclusive)"
@@ -507,37 +459,17 @@ async def main():
     parser.add_argument(
         "--end-year", type=int, required=True, help="End year (inclusive)"
     )
-    parser.add_argument(
-        "--endpoints", type=str, help="Comma-separated endpoint keys (subset)"
-    )
-    parser.add_argument(
-        "--max-concurrency", type=int, help="Override max concurrent requests"
-    )
-    parser.add_argument(
-        "--batch-size", type=int, help="Flush threshold per endpoint buffer"
-    )
-    parser.add_argument(
-        "--page-delay-ms", type=int, help="Delay between paginated requests (ms)"
-    )
+    parser.add_argument("--endpoints", type=str, help="Comma-separated endpoint keys")
+    parser.add_argument("--max-concurrency", type=int, help="Max concurrent requests")
+    parser.add_argument("--batch-size", type=int, help="Flush threshold per buffer")
+    parser.add_argument("--page-delay-ms", type=int, help="Delay between pages (ms)")
     parser.add_argument(
         "--keep-awake", action="store_true", help="Keep system awake during run"
     )
     parser.add_argument("-v", "--verbose", action="store_true", help="Verbose logging")
-    parser.add_argument(
-        "--drop-existing",
-        action="store_true",
-        help="Drop existing per-endpoint tables before ingest",
-    )
-    parser.add_argument(
-        "--skip-expand",
-        action="store_true",
-        help="Skip per-endpoint expanded tables creation",
-    )
-    parser.add_argument(
-        "--expanded-suffix",
-        default="expanded",
-        help="Suffix for per-endpoint expanded tables (default: expanded)",
-    )
+    parser.add_argument("--drop-existing", action="store_true", help="Drop existing tables")
+    parser.add_argument("--skip-expand", action="store_true", help="Skip expanded table creation")
+    parser.add_argument("--expanded-suffix", default="expanded", help="Suffix for expanded tables")
     args = parser.parse_args()
 
     if args.verbose:
@@ -581,27 +513,23 @@ async def main():
                 flush_threshold=batch_size,
             )
         elapsed = datetime.utcnow() - start
-        logger.info("=" * 72)
+        logger.info("=" * 60)
         logger.info("ETL COMPLETE")
-        logger.info(
-            f"Rows seen: {stats['rows_seen']} | Rows inserted (unique): {stats['rows_inserted']}"
-        )
+        logger.info(f"Rows seen: {stats['rows_seen']} | Inserted: {stats['rows_inserted']}")
         logger.info("Tables:")
         for t in stats["endpoint_tables"]:
             logger.info(f"  - {t}")
         logger.info(f"Duration: {elapsed}")
         if not args.skip_expand:
-            logger.info("Beginning per-endpoint expansion phase...")
+            logger.info("Expanding tables...")
             expansions = etl.build_per_endpoint_expanded_tables(
                 stats["endpoint_keys"], suffix=args.expanded_suffix
             )
             for e in expansions:
-                logger.info(
-                    f"Expanded: {e['expanded_table']} | cols={e['column_count']} | raw_rows={e['raw_row_count']}"
-                )
+                logger.info(f"Expanded: {e['expanded_table']} | cols={e['column_count']}")
         else:
-            logger.info("Per-endpoint expansion skipped (--skip-expand set)")
-        logger.info("=" * 72)
+            logger.info("Expansion skipped")
+        logger.info("=" * 60)
     finally:
         etl.engine.dispose()
 

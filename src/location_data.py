@@ -17,12 +17,16 @@ from shapely.geometry import Point
 
 load_dotenv(override=True)
 
-DB_SCHEMA = None
+def _strip_fips(series):
+    """Strip leading zeros from FIPS codes, replace empty with '0'."""
+    return series.astype(str).str.lstrip("0").replace({"": "0"})
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
+
+DB_SCHEMA = None
 
 SOURCE_TABLE = "test.urban_ccd_directory_exp"
 COORD_PREDICATE = (
@@ -42,11 +46,21 @@ TIGER_FILES = {
 
 def load_config(config_file="config.json"):
     global DB_SCHEMA
-
     script_dir = Path(__file__).parent
     config_path = script_dir.parent / "config.json"
     if not config_path.exists():
         config_path = Path(config_file)
+
+    default_config = {
+        "env_database": {
+            "host": "localhost",
+            "port": 5432,
+            "database": "milestone2",
+            "username": "postgres",
+            "password": "123",
+        },
+        "schema": "public",
+    }
 
     try:
         with open(config_path, "r") as f:
@@ -54,16 +68,7 @@ def load_config(config_file="config.json"):
         logger.info(f"Configuration loaded from: {config_path}")
     except FileNotFoundError:
         logger.warning("Configuration file not found, using defaults")
-        config = {
-            "env_database": {
-                "host": "localhost",
-                "port": 5432,
-                "database": "milestone2",
-                "username": "postgres",
-                "password": "123",
-            },
-            "schema": "public",
-        }
+        config = default_config
     except json.JSONDecodeError as e:
         logger.error(f"Invalid JSON in configuration file: {e}")
         raise
@@ -76,60 +81,56 @@ def get_db_connection(config_file="config.json"):
     config = load_config(config_file)
     db_config = config.get("env_database", config.get("local_database", {}))
 
+    defaults = {"host": "localhost", "database": "milestone2", "username": "postgres", "password": "123", "port": 5432}
     conn = psycopg2.connect(
-        host=db_config.get("host", "localhost"),
-        dbname=db_config.get("database", "milestone2"),
-        user=db_config.get("username", "postgres"),
-        password=db_config.get("password", "123"),
-        port=db_config.get("port", 5432),
+        host=db_config.get("host", defaults["host"]),
+        dbname=db_config.get("database", defaults["database"]),
+        user=db_config.get("username", defaults["username"]),
+        password=db_config.get("password", defaults["password"]),
+        port=db_config.get("port", defaults["port"]),
     )
 
-    _ensure_schema_exists(conn)
-    return conn
-
-
-def _ensure_schema_exists(conn):
     if DB_SCHEMA:
         with conn.cursor() as cur:
             cur.execute(f"CREATE SCHEMA IF NOT EXISTS {DB_SCHEMA};")
         conn.commit()
         logger.info(f"Schema '{DB_SCHEMA}' is ready")
 
+    return conn
+
 
 def test_database_connection():
     try:
-        conn = get_db_connection()
-        cur = conn.cursor()
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                schema, table = SOURCE_TABLE.split(".")
+                cur.execute(
+                    """
+                    SELECT EXISTS (
+                        SELECT FROM information_schema.tables
+                        WHERE table_schema = %s AND table_name = %s
+                    );
+                """,
+                    (schema, table),
+                )
 
-        schema, table = SOURCE_TABLE.split(".")
-        cur.execute(
-            """
-            SELECT EXISTS (
-                SELECT FROM information_schema.tables
-                WHERE table_schema = %s AND table_name = %s
-            );
-        """,
-            (schema, table),
-        )
+                if not cur.fetchone()[0]:
+                    logger.error(f"Source table '{SOURCE_TABLE}' not found!")
+                    return False
 
-        if not cur.fetchone()[0]:
-            logger.error(f"Source table '{SOURCE_TABLE}' not found!")
-            return False
+                cur.execute(
+                    f"""
+                    SELECT COUNT(*) FROM (
+                        SELECT DISTINCT latitude, longitude
+                        FROM {SOURCE_TABLE}
+                        WHERE {COORD_PREDICATE}
+                    ) AS distinct_coords
+                """
+                )
 
-        cur.execute(
-            f"""
-            SELECT COUNT(*) FROM (
-                SELECT DISTINCT latitude, longitude
-                FROM {SOURCE_TABLE}
-                WHERE {COORD_PREDICATE}
-            ) AS distinct_coords
-        """
-        )
-
-        count = cur.fetchone()[0]
-        logger.info(f"Found {count:,} distinct coordinates ready for geocoding")
-        conn.close()
-        return count > 0
+                count = cur.fetchone()[0]
+                logger.info(f"Found {count:,} distinct coordinates ready for geocoding")
+                return count > 0
 
     except Exception as e:
         logger.error(f"Database connection test failed: {e}")
@@ -160,11 +161,7 @@ def _download_file(url: str, target_dir: Path) -> Path:
 
 
 def _extract_shapefile(zip_path: Path, extract_dir: Path):
-    if any(
-        (extract_dir / f).exists()
-        for f in ["*.shp"]
-        if (extract_dir / f).suffix.lower() == ".shp"
-    ):
+    if list(extract_dir.glob("*.shp")):
         return
 
     logger.info(f"Extracting {zip_path.name} ...")
@@ -183,48 +180,36 @@ def prepare_datasets(
 
     for layer, (zip_name, folder) in TIGER_FILES.items():
         if force_download or not (data_dir / zip_name).exists():
-            url = f"{TIGER_BASE_URL}/{folder}/{zip_name}"
-            _download_file(url, data_dir)
+            _download_file(f"{TIGER_BASE_URL}/{folder}/{zip_name}", data_dir)
 
-    zcta_dir = data_dir / "zcta"
-    county_dir = data_dir / "county"
-    state_dir = data_dir / "state"
+    dirs = {layer: data_dir / layer for layer in TIGER_FILES}
+    for layer, (zip_name, _) in TIGER_FILES.items():
+        _extract_shapefile(data_dir / zip_name, dirs[layer])
 
-    _extract_shapefile(data_dir / TIGER_FILES["zcta"][0], zcta_dir)
-    _extract_shapefile(data_dir / TIGER_FILES["county"][0], county_dir)
-    _extract_shapefile(data_dir / TIGER_FILES["state"][0], state_dir)
-
-    return zcta_dir, county_dir, state_dir
+    return dirs["zcta"], dirs["county"], dirs["state"]
 
 
 def load_geodata(zcta_dir: Path, county_dir: Path, state_dir: Path):
     def find_shp_file(directory: Path) -> Path:
-        for p in directory.glob("*.shp"):
-            return p
-        raise FileNotFoundError(f"No .shp file found in {directory}")
+        return next(directory.glob("*.shp"), None) or (_ for _ in ()).throw(
+            FileNotFoundError(f"No .shp file found in {directory}")
+        )
 
     zcta_gdf = gpd.read_file(find_shp_file(zcta_dir))[["ZCTA5CE20", "geometry"]]
-    county_gdf = gpd.read_file(find_shp_file(county_dir))[
-        ["NAME", "STATEFP", "GEOID", "COUNTYFP", "geometry"]
-    ]
-    state_gdf = gpd.read_file(find_shp_file(state_dir))[
-        ["NAME", "STUSPS", "STATEFP", "geometry"]
-    ]
+    county_gdf = gpd.read_file(find_shp_file(county_dir))[["NAME", "STATEFP", "GEOID", "COUNTYFP", "geometry"]]
+    state_gdf = gpd.read_file(find_shp_file(state_dir))[["NAME", "STUSPS", "STATEFP", "geometry"]]
 
     for gdf in [state_gdf, county_gdf]:
-        gdf["STATEFP"] = gdf["STATEFP"].astype(str).str.lstrip("0").replace({"": "0"})
-    county_gdf["COUNTYFP"] = county_gdf["COUNTYFP"].astype(str).str.lstrip("0")
+        gdf["STATEFP"] = _strip_fips(gdf["STATEFP"])
+    county_gdf["COUNTYFP"] = _strip_fips(county_gdf["COUNTYFP"])
 
     for gdf in [zcta_gdf, county_gdf, state_gdf]:
         if gdf.crs is None:
-            logger.warning(
-                "A layer has no CRS; assuming EPSG:4269 -> converting to EPSG:4326"
-            )
+            logger.warning("A layer has no CRS; assuming EPSG:4269 -> converting to EPSG:4326")
             gdf.set_crs(epsg=4269, inplace=True)
         gdf.to_crs(epsg=4326, inplace=True)
+        _ = gdf.sindex  # Trigger spatial index creation
 
-    for gdf in [zcta_gdf, county_gdf, state_gdf]:
-        _ = gdf.sindex
     logger.info("Spatial indices prepared (ZCTA, County, State)")
 
     return zcta_gdf, county_gdf, state_gdf
@@ -232,79 +217,47 @@ def load_geodata(zcta_dir: Path, county_dir: Path, state_dir: Path):
 
 def save_tiger_to_db(zcta_gdf, county_gdf, state_gdf, table_name="census_geodata"):
     try:
-        conn = get_db_connection()
-        cur = conn.cursor()
-
-        logger.info(f"Creating table {table_name}...")
-        cur.execute(f"DROP TABLE IF EXISTS {DB_SCHEMA}.{table_name} CASCADE")
-
-        cur.execute(
-            f"""
-            CREATE TABLE {DB_SCHEMA}.{table_name} (
-                id SERIAL PRIMARY KEY,
-                geoid VARCHAR(20),
-                name VARCHAR(255),
-                layer_type VARCHAR(20),
-                state_fips VARCHAR(3),
-                county_fips VARCHAR(4),
-                geometry GEOMETRY,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """
-        )
-
-        records = []
-
-        for _, row in zcta_gdf.iterrows():
-            records.append(
-                (
-                    row["ZCTA5CE20"],
-                    row["ZCTA5CE20"],
-                    "zcta",
-                    None,
-                    None,
-                    row["geometry"].wkt,
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                logger.info(f"Creating table {table_name}...")
+                cur.execute(f"DROP TABLE IF EXISTS {DB_SCHEMA}.{table_name} CASCADE")
+                cur.execute(
+                    f"""
+                    CREATE TABLE {DB_SCHEMA}.{table_name} (
+                        id SERIAL PRIMARY KEY,
+                        geoid VARCHAR(20),
+                        name VARCHAR(255),
+                        layer_type VARCHAR(20),
+                        state_fips VARCHAR(3),
+                        county_fips VARCHAR(4),
+                        geometry GEOMETRY,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """
                 )
-            )
 
-        for _, row in county_gdf.iterrows():
-            records.append(
-                (
-                    row["GEOID"],
-                    row["NAME"],
-                    "county",
-                    row["STATEFP"],
-                    row["COUNTYFP"],
-                    row["geometry"].wkt,
+                records = [
+                    (row["ZCTA5CE20"], row["ZCTA5CE20"], "zcta", None, None, row["geometry"].wkt)
+                    for _, row in zcta_gdf.iterrows()
+                ] + [
+                    (row["GEOID"], row["NAME"], "county", row["STATEFP"], row["COUNTYFP"], row["geometry"].wkt)
+                    for _, row in county_gdf.iterrows()
+                ] + [
+                    (row["STATEFP"], row["NAME"], "state", row["STATEFP"], None, row["geometry"].wkt)
+                    for _, row in state_gdf.iterrows()
+                ]
+
+                cur.executemany(
+                    f"""
+                    INSERT INTO {DB_SCHEMA}.{table_name}
+                    (geoid, name, layer_type, state_fips, county_fips, geometry)
+                    VALUES (%s, %s, %s, %s, %s, ST_GeomFromText(%s, 4326))
+                """,
+                    records,
                 )
-            )
 
-        for _, row in state_gdf.iterrows():
-            records.append(
-                (
-                    row["STATEFP"],
-                    row["NAME"],
-                    "state",
-                    row["STATEFP"],
-                    None,
-                    row["geometry"].wkt,
-                )
-            )
-
-        cur.executemany(
-            f"""
-            INSERT INTO {DB_SCHEMA}.{table_name}
-            (geoid, name, layer_type, state_fips, county_fips, geometry)
-            VALUES (%s, %s, %s, %s, %s, ST_GeomFromText(%s, 4326))
-        """,
-            records,
-        )
-
-        conn.commit()
-        logger.info(
-            f"Successfully saved {len(records):,} TIGER records to {table_name}"
-        )
-        conn.close()
+            conn.commit()
+            logger.info(f"Successfully saved {len(records):,} TIGER records to {table_name}")
         return True
 
     except Exception as e:
@@ -315,52 +268,27 @@ def save_tiger_to_db(zcta_gdf, county_gdf, state_gdf, table_name="census_geodata
 def spatial_join_points(points_df, zcta_gdf, county_gdf, state_gdf):
     gdf_pts = gpd.GeoDataFrame(
         points_df,
-        geometry=[
-            Point(lon, lat) for lat, lon in zip(points_df.latitude, points_df.longitude)
-        ],
+        geometry=[Point(lon, lat) for lat, lon in zip(points_df.latitude, points_df.longitude)],
         crs="EPSG:4326",
     )
 
-    pts_state = gpd.sjoin(
-        gdf_pts,
-        state_gdf[["NAME", "STATEFP", "geometry"]],
-        predicate="within",
-        how="left",
-        rsuffix="_state",
-    )
-    pts_state.rename(columns={"NAME": "state", "STATEFP": "state_fips"}, inplace=True)
+    result = gdf_pts
+    for gdf, cols, rename_map, suffix in [
+        (state_gdf, ["NAME", "STATEFP", "geometry"], {"NAME": "state", "STATEFP": "state_fips"}, "_state"),
+        (county_gdf, ["NAME", "STATEFP", "COUNTYFP", "geometry"], {"NAME": "county", "COUNTYFP": "county_fips"}, "_county"),
+        (zcta_gdf, None, {"ZCTA5CE20": "zip"}, "_zcta"),
+    ]:
+        result = gpd.sjoin(
+            result, gdf[cols] if cols else gdf, predicate="within", how="left", rsuffix=suffix
+        )
+        result.rename(columns=rename_map, inplace=True)
 
-    pts_county = gpd.sjoin(
-        pts_state,
-        county_gdf[["NAME", "STATEFP", "COUNTYFP", "geometry"]],
-        predicate="within",
-        how="left",
-        rsuffix="_county",
-    )
-    pts_county.rename(
-        columns={"NAME": "county", "COUNTYFP": "county_fips"}, inplace=True
-    )
-
-    pts_zcta = gpd.sjoin(
-        pts_county, zcta_gdf, predicate="within", how="left", rsuffix="_zcta"
-    )
-    pts_zcta.rename(columns={"ZCTA5CE20": "zip"}, inplace=True)
-
-    result = pts_zcta[
-        ["latitude", "longitude", "zip", "county", "county_fips", "state", "state_fips"]
-    ].copy()
-
-    result["state_fips"] = (
-        result["state_fips"].astype(str).str.lstrip("0").replace({"": "0"})
-    )
-    result["county_fips"] = result["county_fips"].astype(str).str.lstrip("0")
+    result = result[["latitude", "longitude", "zip", "county", "county_fips", "state", "state_fips"]].copy()
+    result["state_fips"] = _strip_fips(result["state_fips"])
+    result["county_fips"] = _strip_fips(result["county_fips"])
     result.fillna("", inplace=True)
 
     return result
-
-
-def test_geocoding_connection():
-    return test_database_connection()
 
 
 def geocode_coordinates_to_location_data(
@@ -374,87 +302,76 @@ def geocode_coordinates_to_location_data(
         zcta_gdf, county_gdf, state_gdf = load_geodata(zcta_dir, county_dir, state_dir)
 
         logger.info("Saving TIGER/Line geodata to census_geodata table...")
-        if not save_tiger_to_db(
-            zcta_gdf, county_gdf, state_gdf, table_name="census_geodata"
-        ):
+        if not save_tiger_to_db(zcta_gdf, county_gdf, state_gdf, table_name="census_geodata"):
             logger.warning("Failed to save TIGER data, continuing with geocoding...")
 
-        conn = get_db_connection()
-        cur = conn.cursor()
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                logger.info("Fetching coordinates from source table...")
+                cur.execute(
+                    f"""
+                    SELECT DISTINCT CAST(latitude AS DOUBLE PRECISION) AS latitude,
+                                    CAST(longitude AS DOUBLE PRECISION) AS longitude
+                    FROM {SOURCE_TABLE}
+                    WHERE {COORD_PREDICATE}
+                """
+                )
 
-        logger.info("Fetching coordinates from source table...")
-        cur.execute(
-            f"""
-            SELECT DISTINCT CAST(latitude AS DOUBLE PRECISION) AS latitude,
-                            CAST(longitude AS DOUBLE PRECISION) AS longitude
-            FROM {SOURCE_TABLE}
-            WHERE {COORD_PREDICATE}
-        """
-        )
+                rows = cur.fetchall()
+                if not rows:
+                    logger.warning("No coordinates found to process")
+                    return False
 
-        rows = cur.fetchall()
-        if not rows:
-            logger.warning("No coordinates found to process")
-            return False
+                coords_df = pd.DataFrame(rows, columns=["latitude", "longitude"])
+                logger.info(f"Loaded {len(coords_df):,} coordinate pairs")
 
-        coords_df = pd.DataFrame(rows, columns=["latitude", "longitude"])
-        logger.info(f"Loaded {len(coords_df):,} coordinate pairs")
+                start = time.time()
+                enriched = spatial_join_points(coords_df, zcta_gdf, county_gdf, state_gdf)
+                zip_coverage = (enriched["zip"] != "").mean() * 100
+                logger.info(f"Spatial joins completed in {time.time()-start:.1f}s. ZIP coverage: {zip_coverage:.1f}%")
 
-        start = time.time()
-        enriched = spatial_join_points(coords_df, zcta_gdf, county_gdf, state_gdf)
-        elapsed = time.time() - start
-        zip_coverage = (enriched["zip"] != "").mean() * 100
-        logger.info(
-            f"Spatial joins completed in {elapsed:.1f}s. ZIP coverage: {zip_coverage:.1f}%"
-        )
+                logger.info("Creating location data table...")
+                cur.execute(f"DROP TABLE IF EXISTS {DB_SCHEMA}.{table_name} CASCADE")
+                cur.execute(
+                    f"""
+                    CREATE TABLE {DB_SCHEMA}.{table_name} (
+                        id SERIAL PRIMARY KEY,
+                        latitude DOUBLE PRECISION NOT NULL,
+                        longitude DOUBLE PRECISION NOT NULL,
+                        zip VARCHAR(10),
+                        county VARCHAR(100),
+                        county_fips VARCHAR(3),
+                        state VARCHAR(100),
+                        state_fips VARCHAR(3),
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """
+                )
 
-        logger.info("Creating location data table...")
-        cur.execute(f"DROP TABLE IF EXISTS {DB_SCHEMA}.{table_name} CASCADE")
-        cur.execute(
-            f"""
-            CREATE TABLE {DB_SCHEMA}.{table_name} (
-                id SERIAL PRIMARY KEY,
-                latitude DOUBLE PRECISION NOT NULL,
-                longitude DOUBLE PRECISION NOT NULL,
-                zip VARCHAR(10),
-                county VARCHAR(100),
-                county_fips VARCHAR(3),
-                state VARCHAR(100),
-                state_fips VARCHAR(3),
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """
-        )
+                records = list(enriched.itertuples(index=False, name=None))
+                cur.executemany(
+                    f"""
+                    INSERT INTO {DB_SCHEMA}.{table_name}
+                    (latitude, longitude, zip, county, county_fips, state, state_fips)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s)
+                """,
+                    records,
+                )
 
-        records = list(enriched.itertuples(index=False, name=None))
-        cur.executemany(
-            f"""
-            INSERT INTO {DB_SCHEMA}.{table_name}
-            (latitude, longitude, zip, county, county_fips, state, state_fips)
-            VALUES (%s,%s,%s,%s,%s,%s,%s)
-        """,
-            records,
-        )
-        conn.commit()
+            conn.commit()
 
-        indexes = [
-            f"CREATE INDEX IF NOT EXISTS idx_{table_name}_lat_lon ON {DB_SCHEMA}.{table_name}(latitude, longitude)",
-            f"CREATE INDEX IF NOT EXISTS idx_{table_name}_zip ON {DB_SCHEMA}.{table_name}(zip)",
-            f"CREATE INDEX IF NOT EXISTS idx_{table_name}_state ON {DB_SCHEMA}.{table_name}(state)",
-            f"CREATE INDEX IF NOT EXISTS idx_{table_name}_county_fips ON {DB_SCHEMA}.{table_name}(county_fips)",
-        ]
-        for idx_sql in indexes:
-            try:
-                cur.execute(idx_sql)
-            except Exception as ie:
-                logger.warning(f"Failed to create index: {ie}")
-        conn.commit()
+            with conn.cursor() as cur:
+                for col_spec in ["lat_lon ON (latitude, longitude)", "zip ON (zip)", "state ON (state)", "county_fips ON (county_fips)"]:
+                    idx_name, col_def = col_spec.split(" ON ")
+                    try:
+                        cur.execute(f"CREATE INDEX IF NOT EXISTS idx_{table_name}_{idx_name} ON {DB_SCHEMA}.{table_name}{col_def}")
+                    except Exception as ie:
+                        logger.warning(f"Failed to create index idx_{table_name}_{idx_name}: {ie}")
 
-        zip_count = (enriched["zip"] != "").sum()
-        logger.info(
-            f"Inserted {len(records):,} rows. ZIP codes populated: {zip_count:,} ({zip_count/len(records)*100:.1f}%)"
-        )
-        conn.close()
+            conn.commit()
+            zip_count = (enriched["zip"] != "").sum()
+            logger.info(f"Inserted {len(records):,} rows. ZIP codes populated: {zip_count:,} ({zip_count/len(records)*100:.1f}%)")
+
         return True
 
     except Exception as e:
@@ -465,18 +382,12 @@ def geocode_coordinates_to_location_data(
 def main(args):
     logger.info("Starting TIGER/Line geocoding pipeline")
 
-    if args.test_only:
-        return test_database_connection()
-
-    if not test_database_connection():
-        logger.error("Database prerequisite check failed")
-        return False
+    if args.test_only or not test_database_connection():
+        return test_database_connection() if args.test_only else (logger.error("Database prerequisite check failed") or False)
 
     start = time.time()
     success = geocode_coordinates_to_location_data(
-        table_name=args.table_name,
-        data_dir=args.data_dir,
-        force_download=args.download_data,
+        table_name=args.table_name, data_dir=args.data_dir, force_download=args.download_data
     )
 
     if success:
@@ -502,11 +413,3 @@ if __name__ == "__main__":
     args = parser.parse_args()
     success = main(args)
     exit(0 if success else 1)
-
-
-def test_geocoding_connection():
-    return test_database_connection()
-
-
-def fast_geocode_coordinates(table_name="location_data"):
-    return geocode_coordinates_to_location_data(table_name=table_name)
