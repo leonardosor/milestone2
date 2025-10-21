@@ -1,0 +1,51 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environment
+.env
+*.env.*
+venv/
+.venv/
+
+# Logs
+logs/
+*.log
+
+# Outputs
+outputs/
+*.csv
+*.parquet
+
+# Build
+build/
+dist/
+*.egg-info/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS/Editor
+.DS_Store
+Thumbs.db
+*.swp
+*.tmp
+
+# Databases
+*.db
+*.sqlite
+
+# Keep config tracked
+!config.json
+
+*tiger*
+
+
+*supervised*
+dbt_project/target/
+
+# Claude/AI settings
+.claude/
+.claude/**
+*.claude.*
