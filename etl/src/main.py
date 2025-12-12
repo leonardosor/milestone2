@@ -14,8 +14,10 @@ sys.path.append(str(Path(__file__).parent.parent / "config"))
 from config_loader import ConfigLoader
 
 from census_data import SimpleCensusETL
-from location_data import geocode_coordinates_to_location_data, test_database_connection
-from urban_data import EndpointETL, load_config as load_urban_config
+from location_data import (geocode_coordinates_to_location_data,
+                           test_database_connection)
+from urban_data import EndpointETL
+from urban_data import load_config as load_urban_config
 
 # Ensure logs directory exists
 os.makedirs("/app/logs", exist_ok=True)
@@ -32,6 +34,7 @@ logger = logging.getLogger(__name__)
 QA_MODE = os.getenv("QA_MODE", "false").lower() == "true"
 QA_BREAKPOINTS = os.getenv("QA_BREAKPOINTS", "false").lower() == "true"
 
+
 def qa_breakpoint(message: str, data: Any = None):
     if QA_BREAKPOINTS:
         logger.info(f"QA BREAKPOINT: {message}")
@@ -40,9 +43,11 @@ def qa_breakpoint(message: str, data: Any = None):
             logger.info(f"Data columns: {getattr(data, 'columns', 'N/A')}")
         if QA_MODE:
             import pdb
+
             pdb.set_trace()
         else:
             input(f"Press Enter to continue... (QA: {message})")
+
 
 class OrchestatedETLController:
     def __init__(self, config_file="config.json"):
@@ -74,7 +79,9 @@ class OrchestatedETLController:
             if end_year is None:
                 end_year = self.census_years[1]
 
-            logger.info(f"Starting Census ETL process for years {begin_year}-{end_year}")
+            logger.info(
+                f"Starting Census ETL process for years {begin_year}-{end_year}"
+            )
             qa_breakpoint("Starting Census ETL process", None)
             self.census_etl.run_etl(begin_year=begin_year, end_year=end_year)
             logger.info("Census ETL process completed successfully")
@@ -83,23 +90,36 @@ class OrchestatedETLController:
             logger.error(f"Census ETL process failed: {e}")
             raise
 
-    async def run_urban_etl(self, begin_year: int = None, end_year: int = None, endpoints: list = None):
+    async def run_urban_etl(
+        self, begin_year: int = None, end_year: int = None, endpoints: list = None
+    ):
         try:
             if begin_year is None:
                 begin_year = self.urban_years[0]
             if end_year is None:
                 end_year = self.urban_years[1]
 
-            logger.info(f"Starting Urban Institute ETL process for years {begin_year}-{end_year}")
+            logger.info(
+                f"Starting Urban Institute ETL process for years {begin_year}-{end_year}"
+            )
             qa_breakpoint("Starting Urban Institute ETL process", None)
-            stats = await self.urban_etl.ingest(begin_year=begin_year, end_year=end_year, endpoint_subset=endpoints)
-            logger.info(f"Urban Institute ETL completed: {stats['rows_inserted']} rows inserted")
+            stats = await self.urban_etl.ingest(
+                begin_year=begin_year, end_year=end_year, endpoint_subset=endpoints
+            )
+            logger.info(
+                f"Urban Institute ETL completed: {stats['rows_inserted']} rows inserted"
+            )
             return True
         except Exception as e:
             logger.error(f"Urban Institute ETL process failed: {e}")
             raise
 
-    def run_location_etl(self, table_name: str = "location_data", data_dir: str = None, force_download: bool = False):
+    def run_location_etl(
+        self,
+        table_name: str = "location_data",
+        data_dir: str = None,
+        force_download: bool = False,
+    ):
         try:
             logger.info(f"Starting Location Data ETL process")
             qa_breakpoint("Starting Location Data ETL process", None)
@@ -107,7 +127,9 @@ class OrchestatedETLController:
             if not test_database_connection():
                 raise Exception("Database connection failed for location ETL")
 
-            success = geocode_coordinates_to_location_data(table_name=table_name, data_dir=data_dir, force_download=force_download)
+            success = geocode_coordinates_to_location_data(
+                table_name=table_name, data_dir=data_dir, force_download=force_download
+            )
             if not success:
                 raise Exception("Geocoding process failed")
 
@@ -117,11 +139,20 @@ class OrchestatedETLController:
             logger.error(f"Location Data ETL process failed: {e}")
             raise
 
-    async def run_complete_pipeline(self, census_begin_year: int = None, census_end_year: int = None,
-                                   urban_begin_year: int = None, urban_end_year: int = None,
-                                   urban_endpoints: list = None, location_table_name: str = "location_data",
-                                   location_data_dir: str = None, location_force_download: bool = False,
-                                   skip_census: bool = False, skip_urban: bool = False, skip_location: bool = False):
+    async def run_complete_pipeline(
+        self,
+        census_begin_year: int = None,
+        census_end_year: int = None,
+        urban_begin_year: int = None,
+        urban_end_year: int = None,
+        urban_endpoints: list = None,
+        location_table_name: str = "location_data",
+        location_data_dir: str = None,
+        location_force_download: bool = False,
+        skip_census: bool = False,
+        skip_urban: bool = False,
+        skip_location: bool = False,
+    ):
         try:
             pipeline_start = datetime.now()
             logger.info("Starting Complete ETL Pipeline")
@@ -138,14 +169,20 @@ class OrchestatedETLController:
             if not skip_urban:
                 logger.info("STAGE 2: Urban Institute Data Collection")
                 logger.info("-" * 40)
-                await self.run_urban_etl(urban_begin_year, urban_end_year, urban_endpoints)
+                await self.run_urban_etl(
+                    urban_begin_year, urban_end_year, urban_endpoints
+                )
                 logger.info("Stage 2 completed\n")
             else:
                 logger.info("Skipping Urban ETL")
             if not skip_location:
-                logger.info("STAGE 3: Location Data Processing (Coordinates → Zipcodes)")
+                logger.info(
+                    "STAGE 3: Location Data Processing (Coordinates → Zipcodes)"
+                )
                 logger.info("-" * 40)
-                self.run_location_etl(location_table_name, location_data_dir, location_force_download)
+                self.run_location_etl(
+                    location_table_name, location_data_dir, location_force_download
+                )
                 logger.info("Stage 3 completed\n")
             else:
                 logger.info("Skipping Location ETL")
@@ -170,24 +207,58 @@ class OrchestatedETLController:
         }
         return status
 
+
 async def main():
-    parser = argparse.ArgumentParser(description="Orchestrated ETL Controller for Complete Data Pipeline")
-    parser.add_argument("--config", type=str, default="config.json", help="Configuration file path")
-    parser.add_argument("--census-begin-year", type=int, help="Start year for Census data")
+    parser = argparse.ArgumentParser(
+        description="Orchestrated ETL Controller for Complete Data Pipeline"
+    )
+    parser.add_argument(
+        "--config", type=str, default="config.json", help="Configuration file path"
+    )
+    parser.add_argument(
+        "--census-begin-year", type=int, help="Start year for Census data"
+    )
     parser.add_argument("--census-end-year", type=int, help="End year for Census data")
-    parser.add_argument("--urban-begin-year", type=int, help="Start year for Urban Institute data")
-    parser.add_argument("--urban-end-year", type=int, help="End year for Urban Institute data")
-    parser.add_argument("--urban-endpoints", nargs="+", help="Urban Institute endpoints to fetch")
-    parser.add_argument("--location-table-name", type=str, default="location_data", help="Location data table name")
-    parser.add_argument("--location-data-dir", type=str, help="Directory for TIGER shapefiles")
-    parser.add_argument("--location-force-download", action="store_true", help="Force download TIGER datasets")
-    parser.add_argument("--census-only", action="store_true", help="Run only Census ETL")
-    parser.add_argument("--urban-only", action="store_true", help="Run only Urban Institute ETL")
-    parser.add_argument("--location-only", action="store_true", help="Run only Location Data ETL")
+    parser.add_argument(
+        "--urban-begin-year", type=int, help="Start year for Urban Institute data"
+    )
+    parser.add_argument(
+        "--urban-end-year", type=int, help="End year for Urban Institute data"
+    )
+    parser.add_argument(
+        "--urban-endpoints", nargs="+", help="Urban Institute endpoints to fetch"
+    )
+    parser.add_argument(
+        "--location-table-name",
+        type=str,
+        default="location_data",
+        help="Location data table name",
+    )
+    parser.add_argument(
+        "--location-data-dir", type=str, help="Directory for TIGER shapefiles"
+    )
+    parser.add_argument(
+        "--location-force-download",
+        action="store_true",
+        help="Force download TIGER datasets",
+    )
+    parser.add_argument(
+        "--census-only", action="store_true", help="Run only Census ETL"
+    )
+    parser.add_argument(
+        "--urban-only", action="store_true", help="Run only Urban Institute ETL"
+    )
+    parser.add_argument(
+        "--location-only", action="store_true", help="Run only Location Data ETL"
+    )
     parser.add_argument("--skip-census", action="store_true", help="Skip Census ETL")
     parser.add_argument("--skip-urban", action="store_true", help="Skip Urban ETL")
-    parser.add_argument("--skip-location", action="store_true", help="Skip Location ETL")
-    parser.add_argument("--status", action="store_true", help="Show ETL component status")
+    parser.add_argument(
+        "--skip-location", action="store_true", help="Skip Location ETL"
+    )
+    parser.add_argument(
+        "--status", action="store_true", help="Show ETL component status"
+    )
 
     args = parser.parse_args()
 
@@ -205,9 +276,15 @@ async def main():
         if args.census_only:
             etl_controller.run_census_etl(args.census_begin_year, args.census_end_year)
         elif args.urban_only:
-            await etl_controller.run_urban_etl(args.urban_begin_year, args.urban_end_year, args.urban_endpoints)
+            await etl_controller.run_urban_etl(
+                args.urban_begin_year, args.urban_end_year, args.urban_endpoints
+            )
         elif args.location_only:
-            etl_controller.run_location_etl(args.location_table_name, args.location_data_dir, args.location_force_download)
+            etl_controller.run_location_etl(
+                args.location_table_name,
+                args.location_data_dir,
+                args.location_force_download,
+            )
         else:
             await etl_controller.run_complete_pipeline(
                 census_begin_year=args.census_begin_year,
@@ -227,6 +304,7 @@ async def main():
     except Exception as e:
         logger.error(f"Orchestrated ETL process failed: {e}")
         sys.exit(1)
+
 
 if __name__ == "__main__":
     asyncio.run(main())

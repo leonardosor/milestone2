@@ -8,11 +8,12 @@ Provides interface to trigger and monitor ETL pipelines for:
 - Location Data (Geocoding)
 """
 
-import streamlit as st
 import subprocess
 import sys
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
+
+import streamlit as st
 
 # Page configuration
 st.set_page_config(
@@ -45,15 +46,23 @@ st.sidebar.subheader("Year Range")
 
 col1, col2 = st.sidebar.columns(2)
 with col1:
-    census_begin = st.number_input("Census Begin", value=2014, min_value=2010, max_value=2024, step=1)
+    census_begin = st.number_input(
+        "Census Begin", value=2014, min_value=2010, max_value=2024, step=1
+    )
 with col2:
-    census_end = st.number_input("Census End", value=2024, min_value=2010, max_value=2024, step=1)
+    census_end = st.number_input(
+        "Census End", value=2024, min_value=2010, max_value=2024, step=1
+    )
 
 col3, col4 = st.sidebar.columns(2)
 with col3:
-    urban_begin = st.number_input("Urban Begin", value=2014, min_value=2010, max_value=2024, step=1)
+    urban_begin = st.number_input(
+        "Urban Begin", value=2014, min_value=2010, max_value=2024, step=1
+    )
 with col4:
-    urban_end = st.number_input("Urban End", value=2024, min_value=2010, max_value=2024, step=1)
+    urban_end = st.number_input(
+        "Urban End", value=2024, min_value=2010, max_value=2024, step=1
+    )
 
 # Advanced Options
 st.sidebar.subheader("Advanced Options")
@@ -147,10 +156,19 @@ with tab1:
                     ]
 
                 else:  # Location Data Only
-                    cmd = ["docker", "exec", "milestone2-etl", "python", "/app/src/main.py", "--location-only"]
+                    cmd = [
+                        "docker",
+                        "exec",
+                        "milestone2-etl",
+                        "python",
+                        "/app/src/main.py",
+                        "--location-only",
+                    ]
 
                 # Execute command
-                result = subprocess.run(cmd, capture_output=True, text=True, timeout=3600)
+                result = subprocess.run(
+                    cmd, capture_output=True, text=True, timeout=3600
+                )
 
                 if result.returncode == 0:
                     st.success("✅ ETL pipeline completed successfully!")
@@ -162,7 +180,9 @@ with tab1:
             except subprocess.TimeoutExpired:
                 st.error("⏱️ Pipeline timed out (max 1 hour)")
             except FileNotFoundError:
-                st.error("❌ Docker not found. Make sure Docker is installed and the containers are running.")
+                st.error(
+                    "❌ Docker not found. Make sure Docker is installed and the containers are running."
+                )
             except Exception as e:
                 st.error(f"❌ Error: {str(e)}")
 
@@ -171,11 +191,23 @@ with tab2:
 
     if st.button("🔄 Refresh Logs"):
         try:
-            log_cmd = ["docker", "exec", "milestone2-etl", "tail", "-n", "100", "/app/logs/main_etl.log"]
-            log_result = subprocess.run(log_cmd, capture_output=True, text=True, timeout=10)
+            log_cmd = [
+                "docker",
+                "exec",
+                "milestone2-etl",
+                "tail",
+                "-n",
+                "100",
+                "/app/logs/main_etl.log",
+            ]
+            log_result = subprocess.run(
+                log_cmd, capture_output=True, text=True, timeout=10
+            )
 
             if log_result.returncode == 0:
-                st.text_area("Recent Logs (Last 100 lines)", log_result.stdout, height=400)
+                st.text_area(
+                    "Recent Logs (Last 100 lines)", log_result.stdout, height=400
+                )
             else:
                 st.warning("Could not retrieve logs. The log file may not exist yet.")
         except FileNotFoundError:
@@ -189,7 +221,14 @@ with tab2:
     st.markdown("### Container Status")
     if st.button("Check Container Status"):
         try:
-            status_cmd = ["docker", "ps", "--filter", "name=milestone2", "--format", "table {{.Names}}\t{{.Status}}"]
+            status_cmd = [
+                "docker",
+                "ps",
+                "--filter",
+                "name=milestone2",
+                "--format",
+                "table {{.Names}}\t{{.Status}}",
+            ]
             status_result = subprocess.run(status_cmd, capture_output=True, text=True)
             st.code(status_result.stdout, language="text")
         except Exception as e:
@@ -249,4 +288,6 @@ with tab3:
 
 # Footer
 st.markdown("---")
-st.caption(f"ETL Control Panel • Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+st.caption(
+    f"ETL Control Panel • Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+)

@@ -7,10 +7,11 @@ functionality for the Streamlit interface.
 """
 
 import os
+from typing import Dict, List, Optional
+
 import pandas as pd
-from sqlalchemy import create_engine, text, inspect
-from typing import List, Dict, Optional
 import streamlit as st
+from sqlalchemy import create_engine, inspect, text
 
 
 class DatabaseConnector:
@@ -144,7 +145,9 @@ class DatabaseConnector:
         """
 
         try:
-            return pd.read_sql(query, _self.engine, params={"schema": schema, "table": table})
+            return pd.read_sql(
+                query, _self.engine, params={"schema": schema, "table": table}
+            )
         except Exception as e:
             st.error(f"Error describing table: {e}")
             return pd.DataFrame()
@@ -170,7 +173,9 @@ class DatabaseConnector:
             st.error(f"Error getting row count: {e}")
             return 0
 
-    def get_table_data(self, schema: str, table: str, limit: int = 100, offset: int = 0) -> pd.DataFrame:
+    def get_table_data(
+        self, schema: str, table: str, limit: int = 100, offset: int = 0
+    ) -> pd.DataFrame:
         """
         Fetch table data with pagination.
 

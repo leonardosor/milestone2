@@ -8,9 +8,10 @@ Manage and execute dbt transformations:
 - View documentation
 """
 
-import streamlit as st
 import subprocess
 from datetime import datetime
+
+import streamlit as st
 
 # Page configuration
 st.set_page_config(
@@ -61,7 +62,13 @@ with tab1:
             try:
                 # Build command
                 if model_option == "All Models":
-                    cmd = ["docker", "exec", "milestone2-etl", "./entrypoint.sh", "dbt-run"]
+                    cmd = [
+                        "docker",
+                        "exec",
+                        "milestone2-etl",
+                        "./entrypoint.sh",
+                        "dbt-run",
+                    ]
                 elif model_option == "Staging Only":
                     cmd = [
                         "docker",
@@ -94,7 +101,9 @@ with tab1:
                     ]
 
                 # Execute
-                result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+                result = subprocess.run(
+                    cmd, capture_output=True, text=True, timeout=600
+                )
 
                 if result.returncode == 0:
                     st.success("✅ dbt models executed successfully!")
@@ -139,7 +148,13 @@ with tab2:
             try:
                 # Build command
                 if test_option == "All Tests":
-                    cmd = ["docker", "exec", "milestone2-etl", "./entrypoint.sh", "dbt-test"]
+                    cmd = [
+                        "docker",
+                        "exec",
+                        "milestone2-etl",
+                        "./entrypoint.sh",
+                        "dbt-test",
+                    ]
                 elif test_option == "Staging Tests Only":
                     cmd = [
                         "docker",
@@ -160,7 +175,9 @@ with tab2:
                     ]
 
                 # Execute
-                result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+                result = subprocess.run(
+                    cmd, capture_output=True, text=True, timeout=300
+                )
 
                 if result.returncode == 0:
                     st.success("✅ All dbt tests passed!")
@@ -191,8 +208,16 @@ with tab3:
     if st.button("📚 Generate Documentation", type="primary", use_container_width=True):
         with st.spinner("Generating documentation..."):
             try:
-                cmd = ["docker", "exec", "milestone2-etl", "./entrypoint.sh", "dbt-docs"]
-                result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+                cmd = [
+                    "docker",
+                    "exec",
+                    "milestone2-etl",
+                    "./entrypoint.sh",
+                    "dbt-docs",
+                ]
+                result = subprocess.run(
+                    cmd, capture_output=True, text=True, timeout=120
+                )
 
                 if result.returncode == 0:
                     st.success("✅ Documentation generated successfully!")
@@ -314,4 +339,6 @@ with tab4:
 
 # Footer
 st.markdown("---")
-st.caption(f"dbt Manager • Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+st.caption(
+    f"dbt Manager • Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+)

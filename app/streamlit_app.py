@@ -4,9 +4,10 @@ Milestone 2 - ETL & Analytics Platform
 Main Streamlit Application Entry Point
 """
 
-import streamlit as st
 import sys
 from pathlib import Path
+
+import streamlit as st
 
 # Add ETL modules to path
 sys.path.append(str(Path(__file__).parent / "etl_modules"))
@@ -50,7 +51,10 @@ st.markdown(
 )
 
 # Title
-st.markdown('<div class="main-header">📊 Census & Education Data Platform</div>', unsafe_allow_html=True)
+st.markdown(
+    '<div class="main-header">📊 Census & Education Data Platform</div>',
+    unsafe_allow_html=True,
+)
 st.markdown("---")
 
 # Sidebar navigation

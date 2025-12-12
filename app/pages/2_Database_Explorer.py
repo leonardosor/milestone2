@@ -9,10 +9,11 @@ Interactive database browser with:
 - Export functionality
 """
 
-import streamlit as st
-import pandas as pd
 import sys
 from pathlib import Path
+
+import pandas as pd
+import streamlit as st
 
 # Add components to path
 sys.path.append(str(Path(__file__).parent.parent))
@@ -93,7 +94,9 @@ with tab1:
 
         # Fetch and display data
         try:
-            df = db.get_table_data(selected_schema, selected_table, limit=limit, offset=offset)
+            df = db.get_table_data(
+                selected_schema, selected_table, limit=limit, offset=offset
+            )
 
             if not df.empty:
                 st.dataframe(df, use_container_width=True)
@@ -136,7 +139,11 @@ with tab2:
     )
 
     # Query input
-    default_query = f"SELECT * FROM {selected_schema}.{selected_table} LIMIT 100" if selected_table else "SELECT 1"
+    default_query = (
+        f"SELECT * FROM {selected_schema}.{selected_table} LIMIT 100"
+        if selected_table
+        else "SELECT 1"
+    )
 
     query = st.text_area("SQL Query", default_query, height=150)
 
@@ -150,7 +157,9 @@ with tab2:
                 result_df = db.execute_query(query)
 
                 if not result_df.empty:
-                    st.success(f"✅ Query executed successfully! ({len(result_df)} rows returned)")
+                    st.success(
+                        f"✅ Query executed successfully! ({len(result_df)} rows returned)"
+                    )
 
                     # Display results
                     st.dataframe(result_df, use_container_width=True)
@@ -220,10 +229,16 @@ with tab3:
                         row_count = db.get_table_row_count(schema, table)
                         columns = db.describe_table(schema, table)
                         table_summary.append(
-                            {"Table": table, "Rows": f"{row_count:,}", "Columns": len(columns)}
+                            {
+                                "Table": table,
+                                "Rows": f"{row_count:,}",
+                                "Columns": len(columns),
+                            }
                         )
                     except Exception:
-                        table_summary.append({"Table": table, "Rows": "Error", "Columns": "Error"})
+                        table_summary.append(
+                            {"Table": table, "Rows": "Error", "Columns": "Error"}
+                        )
 
                 summary_df = pd.DataFrame(table_summary)
                 st.dataframe(summary_df, use_container_width=True)
@@ -232,4 +247,6 @@ with tab3:
 
 # Footer
 st.markdown("---")
-st.caption("Database Explorer • Connected to: " + (st.session_state.get("db_host", "Unknown")))
+st.caption(
+    "Database Explorer • Connected to: " + (st.session_state.get("db_host", "Unknown"))
+)

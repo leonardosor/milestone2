@@ -11,11 +11,11 @@ from contextlib import nullcontext
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List
-from wakepy import keep  # type: ignore
 
 import aiohttp
 import backoff
 from sqlalchemy import create_engine, text
+from wakepy import keep  # type: ignore
 
 # Import ConfigLoader
 sys.path.append(str(Path(__file__).parent.parent / "config"))
@@ -29,7 +29,7 @@ logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(message)s",
     handlers=[
         logging.FileHandler("/app/logs/urban_etl.log", encoding="utf-8"),
-        logging.StreamHandler(sys.stdout)
+        logging.StreamHandler(sys.stdout),
     ],
 )
 logger = logging.getLogger(__name__)
@@ -149,7 +149,8 @@ class EndpointETL:
     def _derive_table_name_from_template(template: str, fallback_key: str) -> str:
         segs = [s for s in template.strip("/").split("/") if s]
         filtered = [
-            s.lower().replace("-", "_") for s in segs
+            s.lower().replace("-", "_")
+            for s in segs
             if s.lower() not in {"api", "v1", "schools"}
             and not (s.lower().startswith("{") and s.lower().endswith("}"))
         ]
@@ -192,8 +193,13 @@ class EndpointETL:
             return await resp.json()
 
     async def _fetch_all(
-        self, session, base_url: str, endpoint_template: str,
-        year: int, page_delay: float, max_pages: int | None
+        self,
+        session,
+        base_url: str,
+        endpoint_template: str,
+        year: int,
+        page_delay: float,
+        max_pages: int | None,
     ) -> list:
         ep = endpoint_template.format(year=year)
         results, page = [], 0
@@ -218,7 +224,11 @@ class EndpointETL:
 
             nxt = data.get("next")
             if nxt:
-                next_url = nxt if nxt.startswith("http") else f"{base_url.rstrip('/')}/{nxt.lstrip('/')}"
+                next_url = (
+                    nxt
+                    if nxt.startswith("http")
+                    else f"{base_url.rstrip('/')}/{nxt.lstrip('/')}"
+                )
                 await asyncio.sleep(page_delay)
             else:
                 next_url = None
@@ -386,7 +396,9 @@ class EndpointETL:
 
                 try:
                     key_rows = conn.execute(
-                        text(f"SELECT DISTINCT jsonb_object_keys(data_json) AS k FROM {DB_SCHEMA}.{raw_table}")
+                        text(
+                            f"SELECT DISTINCT jsonb_object_keys(data_json) AS k FROM {DB_SCHEMA}.{raw_table}"
+                        )
                     ).fetchall()
                 except Exception as e:
                     logger.warning(f"Skipping expansion for {raw_table}: {e}")
@@ -404,10 +416,20 @@ class EndpointETL:
                 if drop_existing:
                     conn.execute(text(f"DROP TABLE IF EXISTS {full_expanded} CASCADE;"))
 
-                col_defs = ["id SERIAL PRIMARY KEY", "year INTEGER", "fetched_at TIMESTAMP"]
+                col_defs = [
+                    "id SERIAL PRIMARY KEY",
+                    "year INTEGER",
+                    "fetched_at TIMESTAMP",
+                ]
                 col_defs += [f'"{v}" TEXT' for v in sorted(key_map.values())]
-                conn.execute(text(f"CREATE TABLE {full_expanded} ({','.join(col_defs)});"))
-                conn.execute(text(f"CREATE INDEX idx_{expanded_table}_year ON {full_expanded}(year);"))
+                conn.execute(
+                    text(f"CREATE TABLE {full_expanded} ({','.join(col_defs)});")
+                )
+                conn.execute(
+                    text(
+                        f"CREATE INDEX idx_{expanded_table}_year ON {full_expanded}(year);"
+                    )
+                )
                 conn.commit()
 
                 if key_map:
@@ -426,15 +448,24 @@ class EndpointETL:
                     except Exception as e:
                         logger.warning(f"Insert failed for {full_expanded}: {e}")
 
-                raw_count = conn.execute(text(f"SELECT COUNT(*) FROM {DB_SCHEMA}.{raw_table}")).scalar() or 0
-                results.append({
-                    "endpoint_key": ep_key,
-                    "raw_table": f"{DB_SCHEMA}.{raw_table}",
-                    "expanded_table": full_expanded,
-                    "column_count": len(key_map),
-                    "raw_row_count": raw_count,
-                })
-                logger.info(f"Created expanded table {full_expanded} with {len(key_map)} JSON-derived columns")
+                raw_count = (
+                    conn.execute(
+                        text(f"SELECT COUNT(*) FROM {DB_SCHEMA}.{raw_table}")
+                    ).scalar()
+                    or 0
+                )
+                results.append(
+                    {
+                        "endpoint_key": ep_key,
+                        "raw_table": f"{DB_SCHEMA}.{raw_table}",
+                        "expanded_table": full_expanded,
+                        "column_count": len(key_map),
+                        "raw_row_count": raw_count,
+                    }
+                )
+                logger.info(
+                    f"Created expanded table {full_expanded} with {len(key_map)} JSON-derived columns"
+                )
         return results
 
 
@@ -455,9 +486,15 @@ async def main():
         "--keep-awake", action="store_true", help="Keep system awake during run"
     )
     parser.add_argument("-v", "--verbose", action="store_true", help="Verbose logging")
-    parser.add_argument("--drop-existing", action="store_true", help="Drop existing tables")
-    parser.add_argument("--skip-expand", action="store_true", help="Skip expanded table creation")
-    parser.add_argument("--expanded-suffix", default="expanded", help="Suffix for expanded tables")
+    parser.add_argument(
+        "--drop-existing", action="store_true", help="Drop existing tables"
+    )
+    parser.add_argument(
+        "--skip-expand", action="store_true", help="Skip expanded table creation"
+    )
+    parser.add_argument(
+        "--expanded-suffix", default="expanded", help="Suffix for expanded tables"
+    )
     args = parser.parse_args()
 
     if args.verbose:
@@ -503,7 +540,9 @@ async def main():
         elapsed = datetime.utcnow() - start
         logger.info("=" * 60)
         logger.info("ETL COMPLETE")
-        logger.info(f"Rows seen: {stats['rows_seen']} | Inserted: {stats['rows_inserted']}")
+        logger.info(
+            f"Rows seen: {stats['rows_seen']} | Inserted: {stats['rows_inserted']}"
+        )
         logger.info("Tables:")
         for t in stats["endpoint_tables"]:
             logger.info(f"  - {t}")
@@ -514,7 +553,9 @@ async def main():
                 stats["endpoint_keys"], suffix=args.expanded_suffix
             )
             for e in expansions:
-                logger.info(f"Expanded: {e['expanded_table']} | cols={e['column_count']}")
+                logger.info(
+                    f"Expanded: {e['expanded_table']} | cols={e['column_count']}"
+                )
         else:
             logger.info("Expansion skipped")
         logger.info("=" * 60)

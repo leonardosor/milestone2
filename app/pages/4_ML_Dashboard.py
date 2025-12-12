@@ -5,10 +5,11 @@ ML Dashboard Page
 Basic dashboard for ML model insights (skeleton for future expansion)
 """
 
-import streamlit as st
-import pandas as pd
-from pathlib import Path
 import json
+from pathlib import Path
+
+import pandas as pd
+import streamlit as st
 
 # Page configuration
 st.set_page_config(
@@ -147,7 +148,9 @@ with tab3:
                     except Exception as e:
                         st.error(f"Could not load artifact: {e}")
             else:
-                st.info("No model artifacts found yet. Run the supervised notebook to generate models.")
+                st.info(
+                    "No model artifacts found yet. Run the supervised notebook to generate models."
+                )
         else:
             st.info("Supervised models directory not found")
 
@@ -172,11 +175,15 @@ with tab3:
                     except Exception as e:
                         st.error(f"Could not load artifact: {e}")
             else:
-                st.info("No model artifacts found yet. Run the unsupervised notebook to generate models.")
+                st.info(
+                    "No model artifacts found yet. Run the unsupervised notebook to generate models."
+                )
         else:
             st.info("Unsupervised models directory not found")
 
 # Footer
 st.markdown("---")
 st.caption("ML Dashboard • Models stored in /notebooks, /supervised, /unsupervised")
-st.caption("💡 Future enhancements: Real-time predictions, model deployment, performance monitoring")
+st.caption(
+    "💡 Future enhancements: Real-time predictions, model deployment, performance monitoring"
+)

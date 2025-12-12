@@ -80,11 +80,19 @@ class ConfigLoader:
             config[db_key] = {}
 
         config[db_key] = {
-            "host": os.getenv("DB_HOST", config.get(db_key, {}).get("host", "localhost")),
+            "host": os.getenv(
+                "DB_HOST", config.get(db_key, {}).get("host", "localhost")
+            ),
             "port": int(os.getenv("DB_PORT", config.get(db_key, {}).get("port", 5432))),
-            "database": os.getenv("DB_NAME", config.get(db_key, {}).get("database", "milestone2")),
-            "username": os.getenv("DB_USER", config.get(db_key, {}).get("username", "postgres")),
-            "password": os.getenv("DB_PASSWORD", config.get(db_key, {}).get("password", "postgres")),
+            "database": os.getenv(
+                "DB_NAME", config.get(db_key, {}).get("database", "milestone2")
+            ),
+            "username": os.getenv(
+                "DB_USER", config.get(db_key, {}).get("username", "postgres")
+            ),
+            "password": os.getenv(
+                "DB_PASSWORD", config.get(db_key, {}).get("password", "postgres")
+            ),
         }
 
         # Schema

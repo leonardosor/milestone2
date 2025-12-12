@@ -9,6 +9,7 @@ import sys
 import traceback
 from datetime import datetime
 from pathlib import Path
+
 import censusdata
 import pandas as pd
 from sqlalchemy import create_engine, text
@@ -32,8 +33,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-class SimpleCensusETL:
 
+class SimpleCensusETL:
     def __init__(self, config_file="config.json"):
         # Use new ConfigLoader
         self.config_loader = ConfigLoader(config_file)
@@ -93,8 +94,16 @@ class SimpleCensusETL:
                 );
                 """
                 conn.execute(text(create_sql))
-                conn.execute(text(f"CREATE INDEX idx_census_zip_year ON {DB_SCHEMA}.census_data(zip_code, year);"))
-                conn.execute(text(f"CREATE INDEX idx_census_year ON {DB_SCHEMA}.census_data(year);"))
+                conn.execute(
+                    text(
+                        f"CREATE INDEX idx_census_zip_year ON {DB_SCHEMA}.census_data(zip_code, year);"
+                    )
+                )
+                conn.execute(
+                    text(
+                        f"CREATE INDEX idx_census_year ON {DB_SCHEMA}.census_data(year);"
+                    )
+                )
                 conn.commit()
                 logger.info("Tables created")
 
@@ -117,7 +126,7 @@ class SimpleCensusETL:
                 "B01001I_005E": "hispanic_males_10_14",
                 "B01001A_020E": "white_females_10_14",
                 "B01001B_020E": "black_females_10_14",
-                "B01001I_020E": "hispanic_females_10_14"
+                "B01001I_020E": "hispanic_females_10_14",
             }
 
             variable_codes = list(census_variables.keys())
