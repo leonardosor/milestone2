@@ -319,8 +319,7 @@ def interactive_menu(engine):
 
         if current_df is not None:
             print(
-                f"Current DataFrame: {current_schema}.{current_table} "
-                f"({current_df.shape[0]} rows × {current_df.shape[1]} columns)"
+                f"Current DataFrame: {current_schema}.{current_table} ({current_df.shape[0]} rows × {current_df.shape[1]} columns)"
             )
             print(f"Memory: {current_df.memory_usage(deep=True).sum() / 1024:.1f} KB")
         print("-" * 60)

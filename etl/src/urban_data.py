@@ -9,6 +9,7 @@ import os
 import sys
 from contextlib import nullcontext
 from datetime import datetime
+from pathlib import Path
 from typing import Dict, List
 
 import aiohttp
@@ -16,10 +17,20 @@ import backoff
 from sqlalchemy import create_engine, text
 from wakepy import keep  # type: ignore
 
+# Import ConfigLoader
+sys.path.append(str(Path(__file__).parent.parent / "config"))
+from config_loader import ConfigLoader
+
+# Ensure logs directory exists
+os.makedirs("/app/logs", exist_ok=True)
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s",
-    handlers=[logging.StreamHandler(sys.stdout)],
+    handlers=[
+        logging.FileHandler("/app/logs/urban_etl.log", encoding="utf-8"),
+        logging.StreamHandler(sys.stdout),
+    ],
 )
 logger = logging.getLogger(__name__)
 
@@ -27,35 +38,12 @@ DB_SCHEMA = None
 
 
 def load_config(config_file: str) -> Dict:
+    """Load configuration using ConfigLoader"""
     global DB_SCHEMA
-    if os.path.isabs(config_file):
-        search = [config_file]
-    else:
-        cwd = os.getcwd()
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        search = [
-            os.path.join(cwd, config_file),
-            os.path.join(script_dir, config_file),
-            os.path.join(os.path.dirname(script_dir), config_file),
-        ]
-
-    for p in search:
-        if not os.path.exists(p):
-            continue
-        try:
-            with open(p, "r", encoding="utf-8") as f:
-                cfg = json.load(f)
-            DB_SCHEMA = cfg.get("schema")
-            if not DB_SCHEMA:
-                raise ValueError("Missing 'schema' in config.json")
-            logger.info(f"Loaded config from {p}")
-            return cfg
-        except json.JSONDecodeError as e:
-            logger.error(f"Invalid JSON in {p}: {e}")
-            raise
-
-    logger.error("Configuration file not found. Tried: " + ", ".join(search))
-    raise FileNotFoundError(config_file)
+    config_loader = ConfigLoader(config_file)
+    DB_SCHEMA = config_loader.config.get("schema", "public")
+    logger.info(f"Configuration loaded with schema: {DB_SCHEMA}")
+    return config_loader.config
 
 
 def sanitize_identifier(name: str) -> str:

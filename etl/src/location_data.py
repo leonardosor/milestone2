@@ -2,6 +2,7 @@
 import json
 import logging
 import os
+import sys
 import time
 import zipfile
 from pathlib import Path
@@ -14,7 +15,14 @@ import requests
 from dotenv import load_dotenv
 from shapely.geometry import Point
 
+# Import ConfigLoader
+sys.path.append(str(Path(__file__).parent.parent / "config"))
+from config_loader import ConfigLoader
+
 load_dotenv(override=True)
+
+# Ensure logs directory exists
+os.makedirs("/app/logs", exist_ok=True)
 
 
 def _strip_fips(series):
@@ -23,7 +31,12 @@ def _strip_fips(series):
 
 
 logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    handlers=[
+        logging.FileHandler("/app/logs/location_etl.log", encoding="utf-8"),
+        logging.StreamHandler(sys.stdout),
+    ],
 )
 logger = logging.getLogger(__name__)
 
@@ -44,56 +57,23 @@ TIGER_FILES = {
 
 
 def load_config(config_file="config.json"):
+    """Load configuration using ConfigLoader"""
     global DB_SCHEMA
-    script_dir = Path(__file__).parent
-    config_path = script_dir.parent / "config.json"
-    if not config_path.exists():
-        config_path = Path(config_file)
-
-    default_config = {
-        "env_database": {
-            "host": "localhost",
-            "port": 5432,
-            "database": "milestone2",
-            "username": "postgres",
-            "password": "123",
-        },
-        "schema": "public",
-    }
-
-    try:
-        with open(config_path, "r") as f:
-            config = json.load(f)
-        logger.info(f"Configuration loaded from: {config_path}")
-    except FileNotFoundError:
-        logger.warning("Configuration file not found, using defaults")
-        config = default_config
-    except json.JSONDecodeError as e:
-        logger.error(f"Invalid JSON in configuration file: {e}")
-        raise
-
-    DB_SCHEMA = config.get("schema", "public")
-    return config
+    config_loader = ConfigLoader(config_file)
+    DB_SCHEMA = config_loader.config.get("schema", "public")
+    logger.info(f"Configuration loaded with schema: {DB_SCHEMA}")
+    return config_loader.config
 
 
 def get_db_connection(config_file="config.json"):
-    config = load_config(config_file)
-    db_config = config.get("env_database", config.get("local_database", {}))
+    """Get database connection using ConfigLoader"""
+    config_loader = ConfigLoader(config_file)
+    global DB_SCHEMA
+    DB_SCHEMA = config_loader.config.get("schema", "public")
 
-    defaults = {
-        "host": "localhost",
-        "database": "milestone2",
-        "username": "postgres",
-        "password": "123",
-        "port": 5432,
-    }
-    conn = psycopg2.connect(
-        host=db_config.get("host", defaults["host"]),
-        dbname=db_config.get("database", defaults["database"]),
-        user=db_config.get("username", defaults["username"]),
-        password=db_config.get("password", defaults["password"]),
-        port=db_config.get("port", defaults["port"]),
-    )
+    # Use ConfigLoader's psycopg2 connection params
+    conn_params = config_loader.get_psycopg2_connection_params()
+    conn = psycopg2.connect(**conn_params)
 
     if DB_SCHEMA:
         with conn.cursor() as cur:
@@ -430,8 +410,7 @@ def geocode_coordinates_to_location_data(
                     idx_name, col_def = col_spec.split(" ON ")
                     try:
                         cur.execute(
-                            f"CREATE INDEX IF NOT EXISTS idx_{table_name}_{idx_name} "
-                            f"ON {DB_SCHEMA}.{table_name}{col_def}"
+                            f"CREATE INDEX IF NOT EXISTS idx_{table_name}_{idx_name} ON {DB_SCHEMA}.{table_name}{col_def}"
                         )
                     except Exception as ie:
                         logger.warning(
@@ -441,8 +420,7 @@ def geocode_coordinates_to_location_data(
             conn.commit()
             zip_count = (enriched["zip"] != "").sum()
             logger.info(
-                f"Inserted {len(records):,} rows. "
-                f"ZIP codes populated: {zip_count:,} ({zip_count/len(records)*100:.1f}%)"
+                f"Inserted {len(records):,} rows. ZIP codes populated: {zip_count:,} ({zip_count/len(records)*100:.1f}%)"
             )
 
         return True

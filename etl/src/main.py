@@ -6,7 +6,12 @@ import logging
 import os
 import sys
 from datetime import datetime
+from pathlib import Path
 from typing import Any
+
+# Import ConfigLoader
+sys.path.append(str(Path(__file__).parent.parent / "config"))
+from config_loader import ConfigLoader
 
 from census_data import SimpleCensusETL
 from location_data import (geocode_coordinates_to_location_data,
@@ -14,11 +19,14 @@ from location_data import (geocode_coordinates_to_location_data,
 from urban_data import EndpointETL
 from urban_data import load_config as load_urban_config
 
+# Ensure logs directory exists
+os.makedirs("/app/logs", exist_ok=True)
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s",
     handlers=[
-        logging.FileHandler("./logs/main_etl.log"),
+        logging.FileHandler("/app/logs/main_etl.log"),
         logging.StreamHandler(sys.stdout),
     ],
 )
@@ -43,25 +51,15 @@ def qa_breakpoint(message: str, data: Any = None):
 
 class OrchestatedETLController:
     def __init__(self, config_file="config.json"):
-        self.config = self._load_config(config_file)
+        # Use ConfigLoader
+        self.config_loader = ConfigLoader(config_file)
+        self.config = self.config_loader.config
+        logger.info("Configuration loaded successfully using ConfigLoader")
         self.census_etl = None
         self.urban_etl = None
         self._initialize_etl_components()
         self.census_years = self.config.get("etl", {}).get("census_years", [2015, 2019])
         self.urban_years = self.config.get("etl", {}).get("urban_years", [2020, 2023])
-
-    def _load_config(self, config_file):
-        try:
-            with open(config_file, "r") as f:
-                config = json.load(f)
-            logger.info("Configuration loaded successfully")
-            return config
-        except FileNotFoundError:
-            logger.error(f"Configuration file {config_file} not found")
-            raise
-        except json.JSONDecodeError as e:
-            logger.error(f"Invalid JSON in configuration file: {e}")
-            raise
 
     def _initialize_etl_components(self):
         try:

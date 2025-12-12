@@ -6,19 +6,28 @@ import json
 import logging
 import os
 import sys
+import traceback
 from datetime import datetime
+from pathlib import Path
 
 import censusdata
 import pandas as pd
 from sqlalchemy import create_engine, text
 
+# Import ConfigLoader
+sys.path.append(str(Path(__file__).parent.parent / "config"))
+from config_loader import ConfigLoader
+
 DB_SCHEMA = None
+
+# Ensure logs directory exists
+os.makedirs("/app/logs", exist_ok=True)
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s",
     handlers=[
-        logging.FileHandler("../logs/census_etl_simple.log", encoding="utf-8"),
+        logging.FileHandler("/app/logs/census_etl_simple.log", encoding="utf-8"),
         logging.StreamHandler(sys.stdout),
     ],
 )
@@ -27,58 +36,21 @@ logger = logging.getLogger(__name__)
 
 class SimpleCensusETL:
     def __init__(self, config_file="config.json"):
-        resolved = self._resolve_config_path(config_file)
-        logger.info(f"Config: {resolved}")
-        self.config = self._load_config(resolved)
-        self.engine = None
-
-    def _resolve_config_path(self, path: str) -> str:
-        if os.path.isabs(path) and os.path.isfile(path):
-            return path
-        if not os.path.isabs(path) and os.path.isfile(path):
-            return os.path.abspath(path)
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        candidates = []
-        for depth in range(0, 6):
-            candidate = os.path.join(script_dir, *([".."] * depth), path)
-            candidate = os.path.abspath(candidate)
-            if candidate not in candidates:
-                candidates.append(candidate)
-            if os.path.isfile(candidate):
-                return candidate
-        logger.debug("Config file not found in candidates: " + "; ".join(candidates))
-        return path
-
-    def _load_config(self, config_file):
+        # Use new ConfigLoader
+        self.config_loader = ConfigLoader(config_file)
+        self.config = self.config_loader.config
         global DB_SCHEMA
-        try:
-            with open(config_file, "r") as f:
-                config = json.load(f)
-            logger.info(f"Configuration loaded: {config_file}")
-            DB_SCHEMA = config.get("schema", "public")
-            return config
-        except FileNotFoundError:
-            logger.warning(f"Config file {config_file} not found")
-        except json.JSONDecodeError as e:
-            logger.error(f"Invalid JSON: {e}")
-            raise
+        DB_SCHEMA = self.config.get("schema", "public")
+        logger.info(f"Configuration loaded with schema: {DB_SCHEMA}")
+        self.engine = None
 
     def connect_to_database(self):
         try:
-            db_creds = self.config.get("local_database", {})
+            # Use ConfigLoader's connection string method
+            connection_string = self.config_loader.get_db_connection_string()
+            logger.info(f"Connecting to database...")
 
-            if not db_creds or not all(
-                key in db_creds
-                for key in ["host", "port", "database", "username", "password"]
-            ):
-                raise ValueError("Incomplete database configuration")
-
-            connection_string = (
-                f"postgresql://{db_creds['username']}:{db_creds['password']}"
-                f"@{db_creds['host']}:{db_creds['port']}/{db_creds['database']}"
-            )
-
-            self.engine = create_engine(connection_string)
+            self.engine = create_engine(connection_string, pool_pre_ping=True)
 
             with self.engine.connect() as conn:
                 conn.execute(text("SELECT 1"))
@@ -89,7 +61,7 @@ class SimpleCensusETL:
                     conn.commit()
                 logger.info(f"Schema '{DB_SCHEMA}' ready")
 
-            logger.info("Database connected")
+            logger.info("Database connected successfully")
 
         except Exception as e:
             logger.error(f"Failed to connect: {e}")

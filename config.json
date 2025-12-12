@@ -1,12 +1,5 @@
 {
     "database_type": "local",
-    "database": {
-        "host": "your-aws-rds-endpoint.amazonaws.com",
-        "port": 5432,
-        "database": "multi_api_data",
-        "username": "your_username",
-        "password": "your_password"
-    },
     "local_database": {
         "host": "localhost",
         "port": 5432,
@@ -21,11 +14,6 @@
         "username": "postgres",
         "password": "123"
     },
-    "aws": {
-        "region": "us-east-1",
-        "secret_name": "multi-api-database-credentials"
-    },
-    "use_aws_secrets": false,
     "schema": "test",
     "census": {
         "rate_limit_delay": 1,
@@ -67,17 +55,5 @@
             2014,
             2024
         ]
-    },
-    "async": {
-        "max_concurrent_requests": 10,
-        "year_batch_size": 2,
-        "batch_delay": 2,
-        "locale_batch_size": 100,
-        "db_batch_size": 1000,
-        "locale_db_batch_size": 500,
-        "connection_pool_size": 10,
-        "max_overflow": 20,
-        "timeout_total": 60,
-        "timeout_connect": 10
     }
 }

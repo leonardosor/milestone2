@@ -1,0 +1,32 @@
+# Database connectivity
+sqlalchemy==2.0.20
+psycopg2-binary==2.9.9
+
+# Async HTTP requests
+aiohttp==3.8.5
+backoff==2.2.1
+
+# Data processing
+pandas==2.0.3
+numpy==1.26.4
+
+# Geographic data processing
+geopandas
+shapely
+pyproj
+geopy==2.4.0
+
+# Census API
+censusdata==1.15.post1
+
+# Utilities
+python-dotenv==1.0.0
+requests==2.32.5
+tqdm==4.67.1
+
+# System utilities
+wakepy
+
+# dbt (for running transformations)
+dbt-core==1.7.0
+dbt-postgres==1.7.0
