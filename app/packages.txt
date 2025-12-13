@@ -1,6 +1,6 @@
-streamlit
-pandas
-sqlalchemy
-psycopg2-binary
-plotly
-python-dotenv
+streamlit==1.32.0
+pandas==2.0.3
+sqlalchemy==2.0.20
+psycopg2-binary==2.9.9
+plotly==6.3.0
+python-dotenv==1.0.0
