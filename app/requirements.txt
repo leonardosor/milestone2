@@ -1,13 +1,13 @@
 # Streamlit
-streamlit==1.32.0
+streamlit>=1.39.0
 
 # Database
-pandas==2.0.3
-sqlalchemy==2.0.20
-psycopg2-binary==2.9.9
+pandas>=2.1.0
+sqlalchemy>=2.0.23
+psycopg2-binary>=2.9.9
 
 # Visualization
-plotly==6.3.0
+plotly>=5.18.0
 
 # Utilities
-python-dotenv==1.0.0
+python-dotenv>=1.0.0
