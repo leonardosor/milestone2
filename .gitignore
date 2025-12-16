@@ -57,3 +57,5 @@ dbt_project/target/
 # Streamlit secrets
 .streamlit/secrets.toml
 app/.streamlit/secrets.toml
+
+*.sql
