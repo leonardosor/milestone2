@@ -1,5 +1,5 @@
 {
-    "database_type": "local",
+    "database_type": "env",
     "local_database": {
         "host": "localhost",
         "port": 5432,
@@ -8,11 +8,11 @@
         "password": "123"
     },
     "env_database": {
-        "host": "localhost",
+        "host": "db.dplozyowioyjedbhykes.supabase.co",
         "port": 5432,
-        "database": "milestone2",
+        "database": "postgres",
         "username": "postgres",
-        "password": "123"
+        "password": "xX1@&cJRHh@C7#Rw"
     },
     "schema": "test",
     "census": {

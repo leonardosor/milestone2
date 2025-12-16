@@ -73,6 +73,10 @@ with tab1:
         st.markdown("### Model Comparison")
         try:
             comparison_df = pd.read_csv(model_comparison_file)
+            # Convert object columns to strings for Arrow compatibility
+            for col in comparison_df.columns:
+                if comparison_df[col].dtype == "object":
+                    comparison_df[col] = comparison_df[col].astype(str)
             st.dataframe(comparison_df, use_container_width=True)
         except Exception as e:
             st.warning(f"Could not load model comparison: {e}")

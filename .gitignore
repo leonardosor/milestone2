@@ -18,6 +18,10 @@ outputs/
 *.csv
 *.parquet
 
+# Machine Learning
+catboost_info/
+target/
+
 # Build
 build/
 dist/
@@ -49,3 +53,7 @@ dbt_project/target/
 .claude/
 .claude/**
 *.claude.*
+
+# Streamlit secrets
+.streamlit/secrets.toml
+app/.streamlit/secrets.toml

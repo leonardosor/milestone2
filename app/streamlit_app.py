@@ -109,9 +109,10 @@ with col2:
         <li>Browse schemas and tables</li>
         <li>Run custom SQL queries</li>
         <li>Export data (CSV, Excel)</li>
+        <li><b>📊 Data visualizations</b></li>
         </ul>
         <br>
-        <b>Actions:</b> Query data, analyze tables, download results
+        <b>Actions:</b> Query data, analyze tables, visualize insights, download results
         </div>
         """,
         unsafe_allow_html=True,

@@ -8,6 +8,7 @@ functionality for the Streamlit interface.
 
 import os
 from typing import Dict, List, Optional
+from urllib.parse import quote_plus
 
 import pandas as pd
 import streamlit as st
@@ -22,20 +23,62 @@ class DatabaseConnector:
         self.engine = None
         self._create_engine()
 
-    def _create_engine(self):
-        """Create SQLAlchemy engine from environment variables."""
-        try:
-            host = os.getenv("DB_HOST", "localhost")
-            port = os.getenv("DB_PORT", "5432")
-            database = os.getenv("DB_NAME", "milestone2")
-            username = os.getenv("DB_USER", "postgres")
-            password = os.getenv("DB_PASSWORD", "postgres")
+    @staticmethod
+    def _make_arrow_compatible(df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Convert DataFrame columns to Arrow-compatible types.
 
-            conn_string = f"postgresql://{username}:{password}@{host}:{port}/{database}"
+        This fixes the Streamlit serialization error with object dtypes
+        by converting them to strings.
+
+        Args:
+            df: Input DataFrame
+
+        Returns:
+            DataFrame with Arrow-compatible types
+        """
+        if df.empty:
+            return df
+
+        df_copy = df.copy()
+
+        # Convert object columns to strings
+        for col in df_copy.columns:
+            if df_copy[col].dtype == "object":
+                # Try to convert to string, handling None/NaN values
+                df_copy[col] = df_copy[col].astype(str)
+                # Replace 'None' and 'nan' strings with empty string
+                df_copy[col] = df_copy[col].replace(["None", "nan", "NaT"], "")
+
+        return df_copy
+
+    def _create_engine(self):
+        """Create SQLAlchemy engine from environment variables or Streamlit secrets."""
+        try:
+            # Try to get credentials from Streamlit secrets first (for Cloud deployment)
+            if hasattr(st, "secrets") and "database" in st.secrets:
+                host = st.secrets["database"]["DB_HOST"]
+                port = st.secrets["database"].get("DB_PORT", "6543")
+                database = st.secrets["database"]["DB_NAME"]
+                username = st.secrets["database"]["DB_USER"]
+                password = st.secrets["database"]["DB_PASSWORD"]
+            else:
+                # Fall back to environment variables (for Docker/local)
+                host = os.getenv("DB_HOST", "localhost")
+                port = os.getenv("DB_PORT", "5432")
+                database = os.getenv("DB_NAME", "milestone2")
+                username = os.getenv("DB_USER", "postgres")
+                password = os.getenv("DB_PASSWORD", "postgres")
+
+            # URL-encode the password to handle special characters
+            encoded_password = quote_plus(password)
+            conn_string = (
+                f"postgresql://{username}:{encoded_password}@{host}:{port}/{database}"
+            )
 
             # Handle Supabase connections
             if "supabase.co" in host:
-                conn_string = f"postgresql://{username}:{password}@{host}:6543/{database}?sslmode=require"
+                conn_string = f"postgresql://{username}:{encoded_password}@{host}:{port}/{database}?sslmode=require"
 
             self.engine = create_engine(conn_string, pool_pre_ping=True)
 
@@ -133,7 +176,8 @@ class DatabaseConnector:
         Returns:
             DataFrame with column information
         """
-        query = """
+        query = text(
+            """
             SELECT
                 column_name,
                 data_type,
@@ -143,11 +187,13 @@ class DatabaseConnector:
             WHERE table_schema = :schema AND table_name = :table
             ORDER BY ordinal_position
         """
+        )
 
         try:
-            return pd.read_sql(
-                query, _self.engine, params={"schema": schema, "table": table}
-            )
+            with _self.engine.connect() as conn:
+                result = conn.execute(query, {"schema": schema, "table": table})
+                df = pd.DataFrame(result.fetchall(), columns=result.keys())
+                return _self._make_arrow_compatible(df)
         except Exception as e:
             st.error(f"Error describing table: {e}")
             return pd.DataFrame()
@@ -191,7 +237,8 @@ class DatabaseConnector:
         query = f"SELECT * FROM {schema}.{table} LIMIT {limit} OFFSET {offset}"
 
         try:
-            return pd.read_sql(query, self.engine)
+            df = pd.read_sql(query, self.engine)
+            return self._make_arrow_compatible(df)
         except Exception as e:
             st.error(f"Error fetching table data: {e}")
             return pd.DataFrame()
@@ -217,7 +264,8 @@ class DatabaseConnector:
                 st.warning("Only SELECT queries are allowed in the web interface")
                 return pd.DataFrame()
 
-            return pd.read_sql(query, self.engine)
+            df = pd.read_sql(query, self.engine)
+            return self._make_arrow_compatible(df)
         except Exception as e:
             st.error(f"Query execution error: {e}")
             return pd.DataFrame()

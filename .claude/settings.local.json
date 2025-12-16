@@ -1,7 +1,24 @@
 {
   "permissions": {
     "allow": [
-      "Bash(python -c \"\nimport re\n\nfiles_to_check = [\n    ''location_data.py'',\n    ''main.py'',\n    ''urban_data.py'',\n    ''fix_shap.py''\n]\n\nemoji_pattern = re.compile(r''[\\U0001F300-\\U0001F9FF]'')\n\nfor filename in files_to_check:\n    try:\n        with open(filename, ''r'', encoding=''utf-8'') as f:\n            content = f.read()\n            emojis = emoji_pattern.findall(content)\n            print(f''{filename}: {len(emojis)} emojis found'')\n            if emojis:\n                unique_emojis = set(emojis)\n                print(f''  Unique emojis: {unique_emojis}'')\n    except Exception as e:\n        print(f''{filename}: Error - {e}'')\n\")"
+      "Bash(python -c \"\nimport re\n\nfiles_to_check = [\n    ''location_data.py'',\n    ''main.py'',\n    ''urban_data.py'',\n    ''fix_shap.py''\n]\n\nemoji_pattern = re.compile(r''[\\U0001F300-\\U0001F9FF]'')\n\nfor filename in files_to_check:\n    try:\n        with open(filename, ''r'', encoding=''utf-8'') as f:\n            content = f.read()\n            emojis = emoji_pattern.findall(content)\n            print(f''{filename}: {len(emojis)} emojis found'')\n            if emojis:\n                unique_emojis = set(emojis)\n                print(f''  Unique emojis: {unique_emojis}'')\n    except Exception as e:\n        print(f''{filename}: Error - {e}'')\n\")",
+      "Bash(pip install psycopg2-binary python-dotenv)",
+      "Bash(powershell:*)",
+      "Bash(pwsh:*)",
+      "Bash(docker logs:*)",
+      "Bash(taskkill:*)",
+      "Bash(python:*)",
+      "Bash(docker restart:*)",
+      "Bash(docker exec:*)",
+      "Bash(docker-compose:*)",
+      "Bash(dir:*)",
+      "Bash(nslookup:*)",
+      "Bash(python -c \"import psycopg2; conn = psycopg2.connect(host=''db.dplozyowioyjedbhykes.supabase.co'', port=5432, database=''postgres'', user=''postgres'', password=''3d1Yj8Z%v#5@U%0f'', sslmode=''require''); cur = conn.cursor(); cur.execute(''SELECT version()''); print(''Connection successful!''); print(cur.fetchone()[0]); conn.close()\")",
+      "Bash($env:PGPASSFILE=\"D:\\docs\\MADS\\696-Milestone 2\\.pgpass\")",
+      "Bash(psql:*)",
+      "Bash(Get-Content \"D:\\docs\\MADS\\696-Milestone 2\\db_backup\\milestone2_dump.sql\")",
+      "Bash(echo:*)",
+      "Bash(docker ps:*)"
     ],
     "deny": [],
     "ask": []

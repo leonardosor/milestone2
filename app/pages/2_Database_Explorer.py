@@ -60,7 +60,9 @@ else:
     selected_table = None
 
 # Main content tabs
-tab1, tab2, tab3 = st.tabs(["Table Browser", "Custom Query", "Schema Info"])
+tab1, tab2, tab3, tab4 = st.tabs(
+    ["Table Browser", "Custom Query", "Schema Info", "Visualizations"]
+)
 
 # Tab 1: Table Browser
 with tab1:
@@ -244,6 +246,260 @@ with tab3:
                 st.dataframe(summary_df, use_container_width=True)
             else:
                 st.write("No tables in this schema")
+
+# Tab 4: Visualizations
+with tab4:
+    st.subheader("📊 Data Visualizations")
+
+    # Focus on census_data table for visualizations
+    census_schema = "test"
+    census_table = "census_data"
+
+    if db.test_connection():
+        try:
+            # Check if census_data table exists
+            tables = db.list_tables(census_schema)
+            if census_table in tables:
+                st.info("🎯 Visualizing census_data table")
+
+                # Get sample data for visualizations
+                df = db.get_table_data(census_schema, census_table, limit=10000)
+
+                if not df.empty:
+                    # Visualization options
+                    viz_type = st.selectbox(
+                        "Select Visualization Type",
+                        [
+                            "Population Distribution",
+                            "Income Analysis",
+                            "Demographic Breakdown",
+                            "Geographic Analysis",
+                        ],
+                    )
+
+                    if viz_type == "Population Distribution":
+                        st.markdown("### 👥 Population Distribution by ZIP Code")
+
+                        # Filter out rows with zero population
+                        pop_df = df[df["total_pop"] > 0].copy()
+
+                        if not pop_df.empty:
+                            # Create histogram of population
+                            import plotly.express as px
+                            import plotly.graph_objects as go
+
+                            fig = px.histogram(
+                                pop_df,
+                                x="total_pop",
+                                nbins=50,
+                                title="Distribution of Total Population by ZIP Code",
+                                labels={"total_pop": "Total Population"},
+                            )
+                            fig.update_layout(
+                                xaxis_title="Total Population",
+                                yaxis_title="Number of ZIP Codes",
+                                showlegend=False,
+                            )
+                            st.plotly_chart(fig, use_container_width=True)
+
+                            # Summary statistics
+                            col1, col2, col3, col4 = st.columns(4)
+                            with col1:
+                                st.metric("Total ZIP Codes", len(pop_df))
+                            with col2:
+                                st.metric(
+                                    "Avg Population",
+                                    f"{pop_df['total_pop'].mean():,.0f}",
+                                )
+                            with col3:
+                                st.metric(
+                                    "Median Population",
+                                    f"{pop_df['total_pop'].median():,.0f}",
+                                )
+                            with col4:
+                                st.metric(
+                                    "Max Population",
+                                    f"{pop_df['total_pop'].max():,.0f}",
+                                )
+
+                    elif viz_type == "Income Analysis":
+                        st.markdown("### 💰 Income Analysis")
+
+                        # Calculate income percentages
+                        income_df = df.copy()
+                        income_df["income_150k_200k_pct"] = (
+                            income_df["hhi_150k_200k"] / income_df["total_pop"] * 100
+                        ).fillna(0)
+                        income_df["income_220k_plus_pct"] = (
+                            income_df["hhi_220k_plus"] / income_df["total_pop"] * 100
+                        ).fillna(0)
+
+                        # Filter for meaningful data
+                        income_df = income_df[income_df["total_pop"] > 100]
+
+                        if not income_df.empty:
+                            # Scatter plot of income vs population
+                            fig = px.scatter(
+                                income_df,
+                                x="total_pop",
+                                y="income_150k_200k_pct",
+                                size="income_220k_plus_pct",
+                                title="Income Distribution vs Population Size",
+                                labels={
+                                    "total_pop": "Total Population",
+                                    "income_150k_200k_pct": "% Households $150K-$200K",
+                                    "income_220k_plus_pct": "% Households $220K+",
+                                },
+                                hover_data=["zip_code"],
+                            )
+                            st.plotly_chart(fig, use_container_width=True)
+
+                            # Bar chart of top income areas
+                            top_income = income_df.nlargest(10, "income_220k_plus_pct")
+                            fig2 = px.bar(
+                                top_income,
+                                x="zip_code",
+                                y="income_220k_plus_pct",
+                                title="Top 10 ZIP Codes by % Households Earning $220K+",
+                                labels={
+                                    "income_220k_plus_pct": "% Households $220K+",
+                                    "zip_code": "ZIP Code",
+                                },
+                            )
+                            st.plotly_chart(fig2, use_container_width=True)
+
+                    elif viz_type == "Demographic Breakdown":
+                        st.markdown("### 👨‍👩‍👧‍👦 Demographic Analysis (Ages 10-14)")
+
+                        # Calculate demographic percentages
+                        demo_df = df.copy()
+                        demo_df["total_10_14"] = (
+                            demo_df["males_10_14"] + demo_df["females_10_14"]
+                        )
+                        demo_df["male_pct"] = (
+                            demo_df["males_10_14"] / demo_df["total_10_14"] * 100
+                        ).fillna(0)
+                        demo_df["female_pct"] = (
+                            demo_df["females_10_14"] / demo_df["total_10_14"] * 100
+                        ).fillna(0)
+
+                        # Filter for areas with children
+                        demo_df = demo_df[demo_df["total_10_14"] > 0]
+
+                        if not demo_df.empty:
+                            # Gender distribution
+                            fig = px.histogram(
+                                demo_df,
+                                x="male_pct",
+                                nbins=20,
+                                title="Gender Distribution of Children Ages 10-14",
+                                labels={"male_pct": "% Male"},
+                            )
+                            fig.update_layout(
+                                xaxis_title="% Male Children (Ages 10-14)",
+                                yaxis_title="Number of ZIP Codes",
+                            )
+                            st.plotly_chart(fig, use_container_width=True)
+
+                            # Racial/ethnic breakdown (if available)
+                            race_cols = [
+                                "white_males_10_14",
+                                "black_males_10_14",
+                                "hispanic_males_10_14",
+                                "white_females_10_14",
+                                "black_females_10_14",
+                                "hispanic_females_10_14",
+                            ]
+
+                            if all(col in df.columns for col in race_cols):
+                                # Aggregate racial data
+                                race_totals = df[race_cols].sum()
+                                race_data = pd.DataFrame(
+                                    {
+                                        "Race": [
+                                            "White Males",
+                                            "Black Males",
+                                            "Hispanic Males",
+                                            "White Females",
+                                            "Black Females",
+                                            "Hispanic Females",
+                                        ],
+                                        "Count": race_totals.values,
+                                    }
+                                )
+
+                                fig2 = px.pie(
+                                    race_data,
+                                    values="Count",
+                                    names="Race",
+                                    title="Racial/Ethnic Breakdown of Children Ages 10-14",
+                                )
+                                st.plotly_chart(fig2, use_container_width=True)
+
+                    elif viz_type == "Geographic Analysis":
+                        st.markdown("### 🗺️ Geographic Analysis")
+
+                        # ZIP code analysis
+                        zip_df = df[df["zip_code"].notna()].copy()
+                        zip_df["zip_prefix"] = zip_df["zip_code"].str[:3]
+
+                        # Group by ZIP prefix
+                        geo_summary = (
+                            zip_df.groupby("zip_prefix")
+                            .agg(
+                                {
+                                    "total_pop": "sum",
+                                    "hhi_220k_plus": "sum",
+                                    "zip_code": "count",
+                                }
+                            )
+                            .reset_index()
+                        )
+
+                        geo_summary.columns = [
+                            "ZIP_Prefix",
+                            "Total_Population",
+                            "High_Income_Households",
+                            "ZIP_Code_Count",
+                        ]
+
+                        if not geo_summary.empty:
+                            # Population by region
+                            fig = px.bar(
+                                geo_summary,
+                                x="ZIP_Prefix",
+                                y="Total_Population",
+                                title="Total Population by ZIP Code Prefix",
+                                labels={
+                                    "ZIP_Prefix": "ZIP Code Prefix",
+                                    "Total_Population": "Total Population",
+                                },
+                            )
+                            st.plotly_chart(fig, use_container_width=True)
+
+                            # High income households by region
+                            fig2 = px.bar(
+                                geo_summary,
+                                x="ZIP_Prefix",
+                                y="High_Income_Households",
+                                title="High Income Households ($220K+) by ZIP Code Prefix",
+                                labels={
+                                    "ZIP_Prefix": "ZIP Code Prefix",
+                                    "High_Income_Households": "Households $220K+",
+                                },
+                            )
+                            st.plotly_chart(fig2, use_container_width=True)
+
+                else:
+                    st.warning("No data available in census_data table")
+            else:
+                st.warning(
+                    f"Table '{census_table}' not found in schema '{census_schema}'"
+                )
+        except Exception as e:
+            st.error(f"Error creating visualizations: {e}")
+    else:
+        st.error("Database connection not available")
 
 # Footer
 st.markdown("---")

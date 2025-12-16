@@ -1,0 +1,35 @@
+{
+  "database_type": "local",
+  "local_database": {
+    "host": "db",
+    "port": 5432,
+    "database": "milestone2",
+    "username": "postgres",
+    "password": "postgres"
+  },
+  "env_database": {
+    "host": "db",
+    "port": 5432,
+    "database": "milestone2",
+    "username": "postgres",
+    "password": "postgres"
+  },
+  "schema": "test",
+  "etl": {
+    "census_years": [2014, 2024],
+    "urban_years": [2014, 2024],
+    "batch_size": 1000
+  },
+  "async": {
+    "max_concurrent_requests": 10,
+    "db_batch_size": 1000,
+    "connection_pool_size": 10,
+    "max_overflow": 20
+  },
+  "census": {
+    "rate_limit_delay": 1
+  },
+  "urban": {
+    "base_url": "https://educationdata.urban.org"
+  }
+}

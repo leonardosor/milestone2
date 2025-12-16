@@ -1,6 +1,6 @@
 # Database Migration Script for Windows (PowerShell)
 # Migrates data from local PostgreSQL to containerized PostgreSQL
-
+#!/bin/bash
 param(
     [string]$SourceHost = "localhost",
     [string]$SourcePort = "5432",
@@ -78,32 +78,32 @@ Write-Success "pg_dump is available"
 Write-Host ""
 Write-Host "Step 2: Backing up source database..." -ForegroundColor Cyan
 Write-Host "--------------------------------------" -ForegroundColor Cyan
-Write-Info "Source: $SourceUser@$SourceHost:$SourcePort/$SourceDB"
+Write-Info "Source: ${SourceUser}@${SourceHost}:${SourcePort}/${SourceDB}"
 Write-Info "Backup file: $DumpFile"
 
 # Set password environment variable
 $env:PGPASSWORD = $SourcePassword
 
 # Export source database
-try {
-    pg_dump -h $SourceHost `
-            -p $SourcePort `
-            -U $SourceUser `
-            -d $SourceDB `
-            --no-owner `
-            --no-acl `
-            -F p `
-            -f $DumpFile
+& pg_dump -h $SourceHost `
+        -p $SourcePort `
+        -U $SourceUser `
+        -d $SourceDB `
+        --no-owner `
+        --no-acl `
+        -F p `
+        -f $DumpFile 2>$null
 
-    Write-Success "Database backup created successfully"
-
-    # Get file size
-    $FileSize = (Get-Item $DumpFile).Length / 1MB
-    Write-Info "Backup size: $([math]::Round($FileSize, 2)) MB"
-} catch {
-    Write-Error-Custom "Failed to backup source database: $_"
+if ($LASTEXITCODE -ne 0) {
+    Write-Error-Custom "Failed to backup source database. Check credentials and if the database is running."
     exit 1
 }
+
+Write-Success "Database backup created successfully"
+
+# Get file size
+$FileSize = (Get-Item $DumpFile).Length / 1MB
+Write-Info "Backup size: $([math]::Round($FileSize, 2)) MB"
 
 Write-Host ""
 Write-Host "Step 3: Preparing target database..." -ForegroundColor Cyan
@@ -155,23 +155,28 @@ Write-Info "Enabling PostGIS extension..."
 docker exec $TargetContainer psql -U $TargetUser -d $TargetDB -c "CREATE EXTENSION IF NOT EXISTS postgis;"
 Write-Success "PostGIS extension enabled"
 
+# Create 'test' schema if it doesn't exist
+Write-Info "Ensuring 'test' schema exists in target..."
+docker exec $TargetContainer psql -U $TargetUser -d $TargetDB -c "CREATE SCHEMA IF NOT EXISTS test;"
+Write-Success "'test' schema is ready"
+
 Write-Host ""
 Write-Host "Step 4: Restoring database to container..." -ForegroundColor Cyan
 Write-Host "-------------------------------------------" -ForegroundColor Cyan
 
 # Copy dump file to container
 Write-Info "Copying dump file to container..."
-docker cp $DumpFile "$TargetContainer:/tmp/dump.sql"
+docker cp $DumpFile "${TargetContainer}:/tmp/dump.sql"
 Write-Success "Dump file copied"
 
 # Restore database
 Write-Info "Restoring database (this may take several minutes)..."
-try {
-    docker exec $TargetContainer psql -U $TargetUser -d $TargetDB -f /tmp/dump.sql 2>&1 | Out-Null
+$restoreOutput = docker exec $TargetContainer psql -U $TargetUser -d $TargetDB -f /tmp/dump.sql 2>&1
+if ($LASTEXITCODE -eq 0) {
     Write-Success "Database restored successfully"
-} catch {
-    Write-Error-Custom "Database restoration completed with warnings"
-    Write-Info "This is often normal. Check for any critical errors above."
+} else {
+    Write-Error-Custom "Database restoration completed with errors or warnings."
+    Write-Host $restoreOutput
 }
 
 # Clean up temp file in container
@@ -180,6 +185,49 @@ docker exec $TargetContainer rm /tmp/dump.sql
 Write-Host ""
 Write-Host "Step 5: Verifying migration..." -ForegroundColor Cyan
 Write-Host "-------------------------------" -ForegroundColor Cyan
+
+# Step 5a: Copy all tables from 'test' schema to 'public' schema
+Write-Host ""
+Write-Host "Step 5a: Copying tables from 'test' schema to 'public' schema..." -ForegroundColor Cyan
+Write-Host "----------------------------------------------------------------" -ForegroundColor Cyan
+
+# Generate SQL to copy all tables from test to public
+$copySql = @"
+DO \$\$
+DECLARE
+    r RECORD;
+BEGIN
+    FOR r IN
+        SELECT tablename
+        FROM pg_tables
+        WHERE schemaname = 'test'
+    LOOP
+        EXECUTE format('CREATE TABLE IF NOT EXISTS public.%I (LIKE test.%I INCLUDING ALL);', r.tablename, r.tablename);
+        EXECUTE format('INSERT INTO public.%I SELECT * FROM test.%I;', r.tablename, r.tablename);
+    END LOOP;
+END
+\$\$;
+"@
+
+# Save SQL to a temp file
+$TempSqlFile = "$BackupDir\copy_test_to_public.sql"
+Set-Content -Path $TempSqlFile -Value $copySql
+
+# Copy SQL file to container
+docker cp $TempSqlFile "${TargetContainer}:/tmp/copy_test_to_public.sql"
+
+# Execute SQL in container
+$copyOutput = docker exec $TargetContainer psql -U $TargetUser -d $TargetDB -f /tmp/copy_test_to_public.sql 2>&1
+if ($LASTEXITCODE -eq 0) {
+    Write-Success "All tables copied from 'test' to 'public' schema."
+} else {
+    Write-Error-Custom "Error copying tables from 'test' to 'public'."
+    Write-Host $copyOutput
+}
+
+# Clean up temp SQL file in container
+docker exec $TargetContainer rm /tmp/copy_test_to_public.sql
+Remove-Item $TempSqlFile
 
 # Get table count from source
 $env:PGPASSWORD = $SourcePassword

@@ -82,6 +82,7 @@ services:
 networks:
   milestone2-network:
     driver: bridge
+    enable_ipv6: true
 
 volumes:
   postgres_data:
