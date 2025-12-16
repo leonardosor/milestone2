@@ -58,7 +58,7 @@ class DatabaseConnector:
             # Try to get credentials from Streamlit secrets first (for Cloud deployment)
             if hasattr(st, "secrets") and "database" in st.secrets:
                 host = st.secrets["database"]["DB_HOST"]
-                port = st.secrets["database"].get("DB_PORT", "6543")
+                port = st.secrets["database"].get("DB_PORT", "5432")
                 database = st.secrets["database"]["DB_NAME"]
                 username = st.secrets["database"]["DB_USER"]
                 password = st.secrets["database"]["DB_PASSWORD"]
