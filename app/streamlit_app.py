@@ -76,6 +76,25 @@ st.sidebar.markdown("- 🗄️ [Database Explorer](/2_Database_Explorer)")
 st.sidebar.markdown("- 🔧 [dbt Manager](/3_DBT_Manager)")
 st.sidebar.markdown("- 🤖 [ML Dashboard](/4_ML_Dashboard)")
 
+# Debug: Check secrets configuration
+with st.expander("🔍 Debug: Secrets Configuration", expanded=False):
+    st.write("**Secrets Status:**")
+    if hasattr(st, "secrets"):
+        st.success("✓ st.secrets exists")
+        if "database" in st.secrets:
+            st.success("✓ 'database' section found in secrets")
+            st.write("**Database config keys:**", list(st.secrets["database"].keys()))
+            st.write("**DB_HOST:**", st.secrets["database"].get("DB_HOST", "NOT FOUND"))
+            st.write("**DB_PORT:**", st.secrets["database"].get("DB_PORT", "NOT FOUND"))
+        else:
+            st.error("✗ 'database' section NOT found in secrets")
+            st.write(
+                "**Available sections:**",
+                list(st.secrets.keys()) if st.secrets else "None",
+            )
+    else:
+        st.error("✗ st.secrets does not exist")
+
 # Main page content - Feature overview
 st.subheader("Welcome to the Data Platform")
 
