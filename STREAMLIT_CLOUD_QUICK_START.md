@@ -25,7 +25,7 @@
    DB_PORT = "5432"
    DB_NAME = "postgres"
    DB_USER = "postgres"
-   DB_PASSWORD = "xX1@&cJRHh@C7#Rw"
+   DB_PASSWORD = "your-actual-supabase-password"
    ```
 
 4. **Deploy!** ✨

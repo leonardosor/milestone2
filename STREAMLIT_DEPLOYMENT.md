@@ -41,10 +41,10 @@ DB_HOST = "db.dplozyowioyjedbhykes.supabase.co"
 DB_PORT = "5432"
 DB_NAME = "postgres"
 DB_USER = "postgres"
-DB_PASSWORD = "xX1@&cJRHh@C7#Rw"
+DB_PASSWORD = "your-actual-supabase-password"
 ```
 
-⚠️ **Important**: Use your actual Supabase password. The password shown here is from your `.env` file but verify it's correct.
+⚠️ **Important**: Use your actual Supabase password from your Supabase dashboard.
 
 ### 4. Advanced Settings (Optional)
 

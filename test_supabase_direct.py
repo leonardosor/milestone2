@@ -4,9 +4,17 @@ Direct Supabase Connection Test
 Tests connection with various configurations to find what works
 """
 
+import os
 import psycopg2
 from urllib.parse import quote_plus
 from sqlalchemy import create_engine, text
+
+# Load password from environment variable
+SUPABASE_PASSWORD = os.getenv("SUPABASE_PW")
+if not SUPABASE_PASSWORD:
+    print("ERROR: SUPABASE_PW environment variable not set!")
+    print("Please set it with: $env:SUPABASE_PW='your-password' (PowerShell)")
+    exit(1)
 
 # Test configurations
 CONFIGS = [
@@ -16,7 +24,7 @@ CONFIGS = [
         "port": 6543,
         "database": "postgres",
         "user": "postgres.dplozyowioyjedbhykes",
-        "password": "xX1@&cJRHh@C7#Rw",
+        "password": SUPABASE_PASSWORD,
     },
     {
         "name": "Config 2: Port 6543 with plain postgres username",
@@ -24,7 +32,7 @@ CONFIGS = [
         "port": 6543,
         "database": "postgres",
         "user": "postgres",
-        "password": "xX1@&cJRHh@C7#Rw",
+        "password": SUPABASE_PASSWORD,
     },
     {
         "name": "Config 3: Port 5432 with postgres.PROJECT_REF username",
@@ -32,7 +40,7 @@ CONFIGS = [
         "port": 5432,
         "database": "postgres",
         "user": "postgres.dplozyowioyjedbhykes",
-        "password": "xX1@&cJRHh@C7#Rw",
+        "password": SUPABASE_PASSWORD,
     },
     {
         "name": "Config 4: Port 5432 with plain postgres username",
@@ -40,7 +48,7 @@ CONFIGS = [
         "port": 5432,
         "database": "postgres",
         "user": "postgres",
-        "password": "xX1@&cJRHh@C7#Rw",
+        "password": SUPABASE_PASSWORD,
     },
 ]
 

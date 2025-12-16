@@ -4,10 +4,18 @@ Supabase Connection Test - Port 5432 vs 6543
 Tests both session mode (5432) and transaction mode (6543)
 """
 
+import os
 import psycopg2
 from urllib.parse import quote_plus
 from sqlalchemy import create_engine, text
 import time
+
+# Load password from environment variable
+SUPABASE_PASSWORD = os.getenv("SUPABASE_PW")
+if not SUPABASE_PASSWORD:
+    print("ERROR: SUPABASE_PW environment variable not set!")
+    print("Please set it with: $env:SUPABASE_PW='your-password' (PowerShell)")
+    exit(1)
 
 # Test configurations for both ports
 CONFIGS = [
@@ -17,7 +25,7 @@ CONFIGS = [
         "port": 5432,
         "database": "postgres",
         "user": "postgres",
-        "password": "xX1@&cJRHh@C7#Rw",
+        "password": SUPABASE_PASSWORD,
         "description": "Direct session mode - better for persistent connections",
     },
     {
@@ -26,7 +34,7 @@ CONFIGS = [
         "port": 6543,
         "database": "postgres",
         "user": "postgres",
-        "password": "xX1@&cJRHh@C7#Rw",
+        "password": SUPABASE_PASSWORD,
         "description": "Connection pooler mode - better for serverless",
     },
 ]

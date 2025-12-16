@@ -12,7 +12,7 @@
         "port": 5432,
         "database": "postgres",
         "username": "postgres",
-        "password": "xX1@&cJRHh@C7#Rw"
+        "password": "USE_ENV_VARIABLE"
     },
     "schema": "test",
     "census": {

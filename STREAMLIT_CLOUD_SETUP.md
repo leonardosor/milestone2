@@ -24,7 +24,7 @@ DB_HOST = "db.dplozyowioyjedbhykes.supabase.co"
 DB_PORT = "5432"
 DB_NAME = "postgres"
 DB_USER = "postgres"
-DB_PASSWORD = "xX1@&cJRHh@C7#Rw"
+DB_PASSWORD = "your-actual-supabase-password"
 DB_SCHEMA = "test"
 ```
 
@@ -52,7 +52,7 @@ DB_HOST = "db.dplozyowioyjedbhykes.supabase.co"
 DB_PORT = "6543"
 DB_NAME = "postgres"
 DB_USER = "postgres"
-DB_PASSWORD = "xX1@&cJRHh@C7#Rw"
+DB_PASSWORD = "your-actual-supabase-password"
 DB_SCHEMA = "test"
 ```
 
@@ -77,7 +77,7 @@ DB_HOST = "db.dplozyowioyjedbhykes.supabase.co"
 DB_PORT = "6543"
 DB_NAME = "postgres"
 DB_USER = "postgres"
-DB_PASSWORD = "xX1@&cJRHh@C7#Rw"
+DB_PASSWORD = "your-actual-supabase-password"
 DB_SCHEMA = "test"
 ```
 
