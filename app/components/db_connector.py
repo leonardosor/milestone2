@@ -7,12 +7,12 @@ functionality for the Streamlit interface.
 """
 
 import os
-from typing import Dict, List, Optional
+from typing import Dict, List
 from urllib.parse import quote_plus
 
 import pandas as pd
 import streamlit as st
-from sqlalchemy import create_engine, inspect, text
+from sqlalchemy import create_engine, text
 
 
 class DatabaseConnector:
@@ -74,40 +74,25 @@ class DatabaseConnector:
 
             # URL-encode the password to handle special characters
             encoded_password = quote_plus(password)
-            
-            # Handle Supabase connections with optimized parameters for Streamlit Cloud
+
+            # Build connection string
             if "supabase.co" in host:
-                # Use connection pooling mode with minimal SSL overhead
-                conn_string = (
-                    f"postgresql://{username}:{encoded_password}@{host}:{port}/{database}"
-                    f"?sslmode=require&connect_timeout=30&application_name=streamlit_cloud"
-                )
-                # Optimized connection args for Supabase on Streamlit Cloud
-                self.engine = create_engine(
-                    conn_string,
-                    pool_pre_ping=True,
-                    pool_size=1,  # Reduced for serverless
-                    max_overflow=2,  # Limited overflow
-                    pool_recycle=300,  # Shorter recycle for serverless
-                    pool_timeout=30,
-                    connect_args={
-                        "sslmode": "require",
-                        "connect_timeout": 30,
-                        "application_name": "streamlit_cloud",
-                        "options": f"-c search_path={schema},public -c statement_timeout=30000"
-                    }
-                )
+                # Supabase requires SSL
+                conn_string = f"postgresql://{username}:{encoded_password}@{host}:{port}/{database}?sslmode=require"
             else:
-                conn_string = (
-                    f"postgresql://{username}:{encoded_password}@{host}:{port}/{database}"
-                )
-                self.engine = create_engine(
-                    conn_string, 
-                    pool_pre_ping=True,
-                    connect_args={
-                        "options": f"-c search_path={schema},public"
-                    }
-                )
+                conn_string = f"postgresql://{username}:{encoded_password}@{host}:{port}/{database}"
+
+            # Create engine with simple, reliable settings
+            self.engine = create_engine(
+                conn_string,
+                pool_pre_ping=True,
+                pool_size=5,
+                max_overflow=10,
+                pool_recycle=3600,
+                connect_args={"options": f"-c search_path={schema},public"}
+                if "supabase.co" not in host
+                else {},
+            )
 
         except Exception as e:
             st.error(f"Failed to create database engine: {e}")
