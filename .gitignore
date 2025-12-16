@@ -39,6 +39,9 @@ Thumbs.db
 # Databases
 *.db
 *.sqlite
+db_backup/*.sql
+*.dump
+*.sql
 
 # Keep config tracked
 !config.json
@@ -57,5 +60,3 @@ dbt_project/target/
 # Streamlit secrets
 .streamlit/secrets.toml
 app/.streamlit/secrets.toml
-
-*.sql
