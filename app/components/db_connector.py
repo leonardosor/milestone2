@@ -62,6 +62,7 @@ class DatabaseConnector:
                 database = st.secrets["database"]["DB_NAME"]
                 username = st.secrets["database"]["DB_USER"]
                 password = st.secrets["database"]["DB_PASSWORD"]
+                schema = st.secrets["database"].get("DB_SCHEMA", "public")
             else:
                 # Fall back to environment variables (for Docker/local)
                 host = os.getenv("DB_HOST", "localhost")
@@ -69,18 +70,44 @@ class DatabaseConnector:
                 database = os.getenv("DB_NAME", "milestone2")
                 username = os.getenv("DB_USER", "postgres")
                 password = os.getenv("DB_PASSWORD", "postgres")
+                schema = os.getenv("DB_SCHEMA", "public")
 
             # URL-encode the password to handle special characters
             encoded_password = quote_plus(password)
-            conn_string = (
-                f"postgresql://{username}:{encoded_password}@{host}:{port}/{database}"
-            )
-
-            # Handle Supabase connections
+            
+            # Handle Supabase connections with optimized parameters for Streamlit Cloud
             if "supabase.co" in host:
-                conn_string = f"postgresql://{username}:{encoded_password}@{host}:{port}/{database}?sslmode=require"
-
-            self.engine = create_engine(conn_string, pool_pre_ping=True)
+                # Use connection pooling mode with minimal SSL overhead
+                conn_string = (
+                    f"postgresql://{username}:{encoded_password}@{host}:{port}/{database}"
+                    f"?sslmode=require&connect_timeout=30&application_name=streamlit_cloud"
+                )
+                # Optimized connection args for Supabase on Streamlit Cloud
+                self.engine = create_engine(
+                    conn_string,
+                    pool_pre_ping=True,
+                    pool_size=1,  # Reduced for serverless
+                    max_overflow=2,  # Limited overflow
+                    pool_recycle=300,  # Shorter recycle for serverless
+                    pool_timeout=30,
+                    connect_args={
+                        "sslmode": "require",
+                        "connect_timeout": 30,
+                        "application_name": "streamlit_cloud",
+                        "options": f"-c search_path={schema},public -c statement_timeout=30000"
+                    }
+                )
+            else:
+                conn_string = (
+                    f"postgresql://{username}:{encoded_password}@{host}:{port}/{database}"
+                )
+                self.engine = create_engine(
+                    conn_string, 
+                    pool_pre_ping=True,
+                    connect_args={
+                        "options": f"-c search_path={schema},public"
+                    }
+                )
 
         except Exception as e:
             st.error(f"Failed to create database engine: {e}")
