@@ -13,8 +13,8 @@ sys.path.append(str(Path(__file__).parent / "etl" / "config"))
 
 try:
     import psycopg2
-    from dotenv import load_dotenv
     from config_loader import ConfigLoader
+    from dotenv import load_dotenv
 except ImportError as e:
     print(f"Error: Required package not installed: {e}")
     print("Install with: pip install psycopg2-binary python-dotenv")
@@ -23,11 +23,12 @@ except ImportError as e:
 # Load environment
 load_dotenv()
 
+
 def test_local_database():
     """Test connection to local database"""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("Testing LOCAL Database Connection")
-    print("="*60)
+    print("=" * 60)
 
     # Try to connect to local milestone2 database
     try:
@@ -40,11 +41,7 @@ def test_local_database():
         print(f"Connecting to: {user}@{host}:{port}/{database}")
 
         conn = psycopg2.connect(
-            host=host,
-            port=port,
-            database=database,
-            user=user,
-            password=password
+            host=host, port=port, database=database, user=user, password=password
         )
 
         # Test query
@@ -57,19 +54,23 @@ def test_local_database():
         size = cur.fetchone()[0]
 
         # Count tables
-        cur.execute("""
+        cur.execute(
+            """
             SELECT COUNT(*)
             FROM information_schema.tables
             WHERE table_schema NOT IN ('pg_catalog', 'information_schema');
-        """)
+        """
+        )
         table_count = cur.fetchone()[0]
 
         # List schemas
-        cur.execute("""
+        cur.execute(
+            """
             SELECT schema_name
             FROM information_schema.schemata
             WHERE schema_name NOT IN ('pg_catalog', 'information_schema', 'pg_toast');
-        """)
+        """
+        )
         schemas = [row[0] for row in cur.fetchall()]
 
         print("\n✅ Connection successful!")
@@ -81,12 +82,14 @@ def test_local_database():
         # Check for key tables
         print("\n📊 Checking for key tables:")
         for schema in schemas:
-            cur.execute(f"""
+            cur.execute(
+                f"""
                 SELECT table_name
                 FROM information_schema.tables
                 WHERE table_schema = '{schema}'
                 ORDER BY table_name;
-            """)
+            """
+            )
             tables = [row[0] for row in cur.fetchall()]
             if tables:
                 print(f"   {schema}: {len(tables)} table(s)")
@@ -110,23 +113,28 @@ def test_local_database():
         print(f"\n❌ Error: {e}")
         return False
 
+
 def test_container_database():
     """Test connection to container database"""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("Testing CONTAINER Database Connection")
-    print("="*60)
+    print("=" * 60)
 
     try:
         # Load config using ConfigLoader
         config_loader = ConfigLoader()
 
-        print(f"Configuration Type: {config_loader.config.get('database_type', 'not set')}")
+        print(
+            f"Configuration Type: {config_loader.config.get('database_type', 'not set')}"
+        )
         print(f"Schema: {config_loader.config.get('schema', 'not set')}")
 
         # Get connection params
         conn_params = config_loader.get_psycopg2_connection_params()
 
-        print(f"Connecting to: {conn_params['user']}@{conn_params['host']}:{conn_params['port']}/{conn_params['dbname']}")
+        print(
+            f"Connecting to: {conn_params['user']}@{conn_params['host']}:{conn_params['port']}/{conn_params['dbname']}"
+        )
 
         conn = psycopg2.connect(**conn_params)
 
@@ -136,23 +144,29 @@ def test_container_database():
         version = cur.fetchone()[0]
 
         # Get database size
-        cur.execute(f"SELECT pg_size_pretty(pg_database_size('{conn_params['dbname']}'));")
+        cur.execute(
+            f"SELECT pg_size_pretty(pg_database_size('{conn_params['dbname']}'));"
+        )
         size = cur.fetchone()[0]
 
         # Count tables
-        cur.execute("""
+        cur.execute(
+            """
             SELECT COUNT(*)
             FROM information_schema.tables
             WHERE table_schema NOT IN ('pg_catalog', 'information_schema');
-        """)
+        """
+        )
         table_count = cur.fetchone()[0]
 
         # Check PostGIS
-        cur.execute("""
+        cur.execute(
+            """
             SELECT EXISTS(
                 SELECT 1 FROM pg_extension WHERE extname = 'postgis'
             );
-        """)
+        """
+        )
         has_postgis = cur.fetchone()[0]
 
         print("\n✅ Connection successful!")
@@ -168,7 +182,9 @@ def test_container_database():
     except psycopg2.OperationalError as e:
         print(f"\n❌ Connection failed: {e}")
         print("\nTroubleshooting:")
-        print("  1. Start the container: docker-compose -f docker-compose.prod.yml up -d db")
+        print(
+            "  1. Start the container: docker-compose -f docker-compose.prod.yml up -d db"
+        )
         print("  2. Check container status: docker ps | grep milestone2-db")
         print("  3. Verify .env configuration")
         return False
@@ -179,14 +195,16 @@ def test_container_database():
     except Exception as e:
         print(f"\n❌ Error: {e}")
         import traceback
+
         traceback.print_exc()
         return False
 
+
 def test_supabase_connection():
     """Test connection to Supabase (if configured)"""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("Testing SUPABASE Connection (Optional)")
-    print("="*60)
+    print("=" * 60)
 
     # Check if Supabase is configured
     db_type = os.getenv("DATABASE_TYPE", "local")
@@ -212,7 +230,7 @@ def test_supabase_connection():
             database=database,
             user=user,
             password=password,
-            sslmode='require'
+            sslmode="require",
         )
 
         # Test query
@@ -221,11 +239,13 @@ def test_supabase_connection():
         version = cur.fetchone()[0]
 
         # Check PostGIS
-        cur.execute("""
+        cur.execute(
+            """
             SELECT EXISTS(
                 SELECT 1 FROM pg_extension WHERE extname = 'postgis'
             );
-        """)
+        """
+        )
         has_postgis = cur.fetchone()[0]
 
         print("\n✅ Supabase connection successful!")
@@ -248,62 +268,64 @@ def test_supabase_connection():
         print("  3. Check IP allowlist in Supabase settings")
         return False
 
+
 def main():
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("  Database Connection Test Suite")
-    print("="*60)
+    print("=" * 60)
 
     results = {}
 
     # Test local database
-    results['local'] = test_local_database()
+    results["local"] = test_local_database()
 
     # Test container database
-    results['container'] = test_container_database()
+    results["container"] = test_container_database()
 
     # Test Supabase (if configured)
-    results['supabase'] = test_supabase_connection()
+    results["supabase"] = test_supabase_connection()
 
     # Summary
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("  Test Summary")
-    print("="*60)
+    print("=" * 60)
 
     print(f"\n{'Test':<20} {'Status':<15} {'Ready for Migration?'}")
     print("-" * 60)
 
-    local_status = "✅ Pass" if results['local'] else "❌ Fail"
-    local_ready = "Yes" if results['local'] else "No - Fix connection first"
+    local_status = "✅ Pass" if results["local"] else "❌ Fail"
+    local_ready = "Yes" if results["local"] else "No - Fix connection first"
     print(f"{'Local Database':<20} {local_status:<15} {local_ready}")
 
-    container_status = "✅ Pass" if results['container'] else "❌ Fail"
-    container_ready = "Yes" if results['container'] else "No - Start container first"
+    container_status = "✅ Pass" if results["container"] else "❌ Fail"
+    container_ready = "Yes" if results["container"] else "No - Start container first"
     print(f"{'Container Database':<20} {container_status:<15} {container_ready}")
 
-    if results['supabase'] is not None:
-        supabase_status = "✅ Pass" if results['supabase'] else "❌ Fail"
-        supabase_ready = "Yes" if results['supabase'] else "No - Check credentials"
+    if results["supabase"] is not None:
+        supabase_status = "✅ Pass" if results["supabase"] else "❌ Fail"
+        supabase_ready = "Yes" if results["supabase"] else "No - Check credentials"
         print(f"{'Supabase':<20} {supabase_status:<15} {supabase_ready}")
 
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
 
     # Migration recommendations
-    if results['local'] and results['container']:
+    if results["local"] and results["container"]:
         print("\n✅ Ready to migrate!")
         print("\nRun migration script:")
         print("  Windows: .\\migrate_database.ps1")
         print("  Linux/Mac: ./migrate_database.sh")
-    elif results['local'] and results.get('supabase'):
+    elif results["local"] and results.get("supabase"):
         print("\n✅ Ready to migrate to Supabase!")
         print("\nFollow the Supabase migration steps in MIGRATION_GUIDE.md")
-    elif results['local']:
+    elif results["local"]:
         print("\n⚠️  Local database ready, but target not available")
         print("Start container: docker-compose -f docker-compose.prod.yml up -d db")
     else:
         print("\n❌ Cannot proceed with migration")
         print("Fix connection issues before migrating")
 
-    print("="*60 + "\n")
+    print("=" * 60 + "\n")
+
 
 if __name__ == "__main__":
     main()
