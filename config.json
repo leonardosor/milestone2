@@ -8,11 +8,11 @@
         "password": "123"
     },
     "env_database": {
-        "host": "db.dplozyowioyjedbhykes.supabase.co",
+        "host": "ep-ancient-cherry-a4t8v5wk-pooler.us-east-1.aws.neon.tech",
         "port": 5432,
-        "database": "postgres",
-        "username": "postgres",
-        "password": "USE_ENV_VARIABLE"
+        "database": "neondb",
+        "username": "neondb_owner",
+        "password": "npg_0YgExsBDw6QK"
     },
     "schema": "test",
     "census": {
