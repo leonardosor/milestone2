@@ -84,8 +84,10 @@ class DatabaseConnector:
             encoded_password = quote_plus(password)
 
             # Build connection string
-            if "supabase.co" in host:
-                # Supabase requires SSL
+            # Cloud databases (Neon, Supabase, etc.) require SSL
+            if any(
+                cloud in host for cloud in ["neon.tech", "supabase.co", "aws", "azure"]
+            ):
                 conn_string = f"postgresql://{username}:{encoded_password}@{host}:{port}/{database}?sslmode=require"
             else:
                 conn_string = f"postgresql://{username}:{encoded_password}@{host}:{port}/{database}"
@@ -97,9 +99,7 @@ class DatabaseConnector:
                 pool_size=5,
                 max_overflow=10,
                 pool_recycle=3600,
-                connect_args={"options": f"-c search_path={schema},public"}
-                if "supabase.co" not in host
-                else {},
+                connect_args={"options": f"-c search_path={schema},public"},
             )
 
         except Exception as e:
