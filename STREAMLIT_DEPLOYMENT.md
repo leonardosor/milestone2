@@ -4,7 +4,7 @@ This guide will help you deploy your Milestone 2 application to Streamlit Cloud 
 
 ## Prerequisites
 
-1. **Supabase Project**: You already have one set up at `db.dplozyowioyjedbhykes.supabase.co`
+1. **Neon Database**: Create one at https://neon.tech (free tier available)
 2. **GitHub Repository**: Your code at `leonardosor/milestone2`
 3. **Streamlit Cloud Account**: Sign up at [share.streamlit.io](https://share.streamlit.io)
 
@@ -37,14 +37,15 @@ In the Streamlit Cloud dashboard for your app:
 
 ```toml
 [database]
-DB_HOST = "db.dplozyowioyjedbhykes.supabase.co"
+DB_HOST = "your-neon-host.neon.tech"
 DB_PORT = "5432"
-DB_NAME = "postgres"
-DB_USER = "postgres"
-DB_PASSWORD = "your-actual-supabase-password"
+DB_NAME = "neondb"
+DB_USER = "your-neon-username"
+DB_PASSWORD = "your-neon-password"
+DB_SCHEMA = "test"
 ```
 
-⚠️ **Important**: Use your actual Supabase password from your Supabase dashboard.
+⚠️ **Important**: Use your actual Neon credentials from https://console.neon.tech
 
 ### 4. Advanced Settings (Optional)
 

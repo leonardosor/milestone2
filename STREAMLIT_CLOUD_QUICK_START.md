@@ -21,12 +21,15 @@
 3. **Add Secrets** (Settings → Secrets):
    ```toml
    [database]
-   DB_HOST = "db.dplozyowioyjedbhykes.supabase.co"
+   DB_HOST = "your-neon-host.neon.tech"
    DB_PORT = "5432"
-   DB_NAME = "postgres"
-   DB_USER = "postgres"
-   DB_PASSWORD = "your-actual-supabase-password"
+   DB_NAME = "neondb"
+   DB_USER = "your-neon-username"
+   DB_PASSWORD = "your-neon-password"
+   DB_SCHEMA = "test"
    ```
+
+   **Note:** Get your Neon credentials from https://console.neon.tech
 
 4. **Deploy!** ✨
 
