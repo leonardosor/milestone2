@@ -56,7 +56,15 @@ class DatabaseConnector:
         """Create SQLAlchemy engine from environment variables or Streamlit secrets."""
         try:
             # Try to get credentials from Streamlit secrets first (for Cloud deployment)
-            if hasattr(st, "secrets") and "database" in st.secrets:
+            use_secrets = False
+            try:
+                if hasattr(st, "secrets") and "database" in st.secrets:
+                    use_secrets = True
+            except Exception:
+                # Secrets file doesn't exist, use environment variables
+                pass
+
+            if use_secrets:
                 host = st.secrets["database"]["DB_HOST"]
                 port = st.secrets["database"].get("DB_PORT", "5432")
                 database = st.secrets["database"]["DB_NAME"]
@@ -64,7 +72,7 @@ class DatabaseConnector:
                 password = st.secrets["database"]["DB_PASSWORD"]
                 schema = st.secrets["database"].get("DB_SCHEMA", "public")
             else:
-                # Fall back to environment variables (for Docker/local)
+                # Use environment variables (for Docker/Railway/local)
                 host = os.getenv("DB_HOST", "localhost")
                 port = os.getenv("DB_PORT", "5432")
                 database = os.getenv("DB_NAME", "milestone2")
