@@ -17,7 +17,8 @@ import streamlit as st
 
 # Add components to path
 sys.path.append(str(Path(__file__).parent.parent))
-from components.db_connector import get_db_connector
+
+from components.db_connector import get_db_connector  # noqa: E402
 
 # Page configuration
 st.set_page_config(
@@ -286,7 +287,6 @@ with tab4:
                         if not pop_df.empty:
                             # Create histogram of population
                             import plotly.express as px
-                            import plotly.graph_objects as go
 
                             fig = px.histogram(
                                 pop_df,

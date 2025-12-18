@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Milestone 2 - ETL & Analytics Platform
+ETL & Analytics Platform
 Main Streamlit Application Entry Point
 """
 
@@ -14,7 +14,7 @@ sys.path.append(str(Path(__file__).parent / "etl_modules"))
 
 # Page configuration
 st.set_page_config(
-    page_title="Milestone 2 ETL & Analytics",
+    page_title="Demographic and Academic Performance",
     page_icon="📊",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -62,19 +62,16 @@ st.sidebar.title("🧭 Navigation")
 st.sidebar.info(
     """
     **This application provides:**
-    - ETL pipeline management
     - Interactive database exploration
-    - dbt transformation execution
     - ML model insights
     """
 )
 
 st.sidebar.markdown("---")
 st.sidebar.markdown("### Quick Links")
-st.sidebar.markdown("- 🔄 [ETL Control](/1_ETL_Control)")
-st.sidebar.markdown("- 🗄️ [Database Explorer](/2_Database_Explorer)")
-st.sidebar.markdown("- 🔧 [dbt Manager](/3_DBT_Manager)")
-st.sidebar.markdown("- 🤖 [ML Dashboard](/4_ML_Dashboard)")
+st.sidebar.markdown("- 🗄️ [Database Explorer](/1_Database_Explorer)")
+st.sidebar.markdown("- 🤖 [ML Dashboard](/2_ML_Dashboard)")
+
 
 # Debug: Check secrets configuration
 with st.expander("🔍 Debug: Secrets Configuration", expanded=False):
@@ -126,27 +123,9 @@ with st.expander("🔍 Debug: Secrets Configuration", expanded=False):
 # Main page content - Feature overview
 st.subheader("Welcome to the Data Platform")
 
-col1, col2, col3 = st.columns(3)
+col1, col2 = st.columns(2)
 
 with col1:
-    st.markdown("### 🔄 ETL Pipeline")
-    st.markdown(
-        """
-        <div class="feature-box">
-        Extract, transform, and load data from:
-        <ul>
-        <li>US Census Bureau API</li>
-        <li>Urban Institute API</li>
-        <li>Geographic data (TIGER/Line)</li>
-        </ul>
-        <br>
-        <b>Actions:</b> Configure years, trigger runs, monitor progress
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-with col2:
     st.markdown("### 🗄️ Database Explorer")
     st.markdown(
         """
@@ -165,19 +144,19 @@ with col2:
         unsafe_allow_html=True,
     )
 
-with col3:
-    st.markdown("### 🔧 dbt Transformations")
+with col2:
+    st.markdown("### 🤖 ML Dashboard")
     st.markdown(
         """
         <div class="feature-box">
-        Data transformation layer:
+        Machine Learning insights:
         <ul>
-        <li>Run staging models</li>
-        <li>Execute mart models</li>
-        <li>Run tests</li>
+        <li>View model performance</li>
+        <li>Analyze predictions</li>
+        <li>Explore feature importance</li>
         </ul>
         <br>
-        <b>Actions:</b> Transform raw data, validate quality
+        <b>Actions:</b> Review ML results and insights
         </div>
         """,
         unsafe_allow_html=True,
