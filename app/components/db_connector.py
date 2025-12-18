@@ -93,14 +93,26 @@ class DatabaseConnector:
                 conn_string = f"postgresql://{username}:{encoded_password}@{host}:{port}/{database}"
 
             # Create engine with simple, reliable settings
-            self.engine = create_engine(
-                conn_string,
-                pool_pre_ping=True,
-                pool_size=5,
-                max_overflow=10,
-                pool_recycle=3600,
-                connect_args={"options": f"-c search_path={schema},public"},
-            )
+            # Neon pooler doesn't support search_path in connect_args
+            if "neon.tech" in host and "-pooler" in host:
+                # Use Neon pooler without search_path
+                self.engine = create_engine(
+                    conn_string,
+                    pool_pre_ping=True,
+                    pool_size=5,
+                    max_overflow=10,
+                    pool_recycle=3600,
+                )
+            else:
+                # For other databases, use search_path
+                self.engine = create_engine(
+                    conn_string,
+                    pool_pre_ping=True,
+                    pool_size=5,
+                    max_overflow=10,
+                    pool_recycle=3600,
+                    connect_args={"options": f"-c search_path={schema},public"},
+                )
 
         except Exception as e:
             st.error(f"Failed to create database engine: {e}")
