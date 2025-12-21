@@ -1,1 +1,1 @@
-web: streamlit run app/Home.py --server.port=$PORT --server.address=0.0.0.0
+web: python app/taipy_app.py

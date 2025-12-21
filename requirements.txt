@@ -1,5 +1,6 @@
-# Streamlit
+# Web Framework
 streamlit>=1.39.0
+taipy>=3.1.0
 
 # Database
 pandas>=2.1.0
