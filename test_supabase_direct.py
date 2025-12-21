@@ -5,8 +5,9 @@ Tests connection with various configurations to find what works
 """
 
 import os
-import psycopg2
 from urllib.parse import quote_plus
+
+import psycopg2
 from sqlalchemy import create_engine, text
 
 # Load password from environment variable
@@ -84,20 +85,20 @@ def test_sqlalchemy(config):
             f"{config['host']}:{config['port']}/{config['database']}"
             f"?sslmode=require&connect_timeout=10"
         )
-        
+
         engine = create_engine(
             conn_string,
             pool_pre_ping=True,
             connect_args={
                 "sslmode": "require",
                 "connect_timeout": 10,
-            }
+            },
         )
-        
+
         with engine.connect() as conn:
             result = conn.execute(text("SELECT version();"))
             version = result.fetchone()[0]
-        
+
         return True, f"Success! Version: {version.split(',')[0]}"
     except Exception as e:
         return False, str(e)
@@ -108,7 +109,7 @@ def main():
     print("SUPABASE CONNECTION TESTING")
     print("=" * 80)
     print()
-    
+
     for i, config in enumerate(CONFIGS, 1):
         print(f"\n{config['name']}")
         print("-" * 80)
@@ -117,7 +118,7 @@ def main():
         print(f"User: {config['user']}")
         print(f"Database: {config['database']}")
         print()
-        
+
         # Test with psycopg2
         print("Testing with psycopg2...")
         success, message = test_psycopg2(config)
@@ -125,9 +126,9 @@ def main():
             print(f"✅ {message}")
         else:
             print(f"❌ Failed: {message}")
-        
+
         print()
-        
+
         # Test with SQLAlchemy
         print("Testing with SQLAlchemy...")
         success, message = test_sqlalchemy(config)
@@ -143,7 +144,7 @@ def main():
             break
         else:
             print(f"❌ Failed: {message}")
-    
+
     print("\n" + "=" * 80)
     print("TEST COMPLETE")
     print("=" * 80)

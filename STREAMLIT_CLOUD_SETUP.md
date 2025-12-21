@@ -8,7 +8,7 @@ The error "Cannot assign requested address" on Streamlit Cloud typically indicat
 3. **Alternative solution needed** - Use Supabase's session mode (port 5432) or connection pooler
 
 ### Understanding the Error
-The error happens because Streamlit Cloud's infrastructure tries to connect via IPv6 (`2600:1f13:838:...`), 
+The error happens because Streamlit Cloud's infrastructure tries to connect via IPv6 (`2600:1f13:838:...`),
 but this might not be properly configured or supported for Supabase's transaction pooler (port 6543).
 
 ## Step-by-Step Fix

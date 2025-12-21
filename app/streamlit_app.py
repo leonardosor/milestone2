@@ -71,6 +71,7 @@ st.sidebar.markdown("---")
 st.sidebar.markdown("### Quick Links")
 st.sidebar.markdown("- 🗄️ [Database Explorer](/1_Database_Explorer)")
 st.sidebar.markdown("- 🤖 [ML Dashboard](/2_ML_Dashboard)")
+st.sidebar.markdown("- 🗺️ [Interactive Analytics](/3_Interactive_Analytics)")
 
 
 # Debug: Check secrets configuration
@@ -123,7 +124,7 @@ with st.expander("🔍 Debug: Secrets Configuration", expanded=False):
 # Main page content - Feature overview
 st.subheader("Welcome to the Data Platform")
 
-col1, col2 = st.columns(2)
+col1, col2, col3 = st.columns(3)
 
 with col1:
     st.markdown("### 🗄️ Database Explorer")
@@ -157,6 +158,25 @@ with col2:
         </ul>
         <br>
         <b>Actions:</b> Review ML results and insights
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+with col3:
+    st.markdown("### 🗺️ Interactive Analytics")
+    st.markdown(
+        """
+        <div class="feature-box">
+        Advanced data exploration:
+        <ul>
+        <li>Filter by ethnicity & demographics</li>
+        <li>Test score analysis by race</li>
+        <li>Interactive state/ZIP maps</li>
+        <li><b>🎯 Custom dashboard builder</b></li>
+        </ul>
+        <br>
+        <b>Actions:</b> Explore maps, filter data, build custom views
         </div>
         """,
         unsafe_allow_html=True,

@@ -66,26 +66,26 @@ Since your password was previously committed to git, you should:
    Update `app/.streamlit/secrets.toml` with the new password.
 
 ### 5. **Remove Old Commits from Git History (Optional but Recommended)**
-   
+
    If you want to completely remove the password from git history:
-   
+
    ```powershell
    # WARNING: This rewrites git history!
    # Only do this if you understand the implications
-   
+
    # Install git-filter-repo (if not already installed)
    # pip install git-filter-repo
-   
+
    # Create a backup first!
    git clone --mirror https://github.com/leonardosor/milestone2.git milestone2-backup
-   
+
    # Remove sensitive data
    git filter-repo --invert-paths --path config.json
-   
+
    # Force push (requires force push permissions)
    git push origin --force --all
    ```
-   
+
    **Note:** This is a destructive operation. Only do this if:
    - You have backups
    - You understand git history rewriting

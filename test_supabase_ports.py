@@ -5,10 +5,11 @@ Tests both session mode (5432) and transaction mode (6543)
 """
 
 import os
-import psycopg2
-from urllib.parse import quote_plus
-from sqlalchemy import create_engine, text
 import time
+from urllib.parse import quote_plus
+
+import psycopg2
+from sqlalchemy import create_engine, text
 
 # Load password from environment variable
 SUPABASE_PASSWORD = os.getenv("SUPABASE_PW")
@@ -46,7 +47,7 @@ def test_connection(config):
         "psycopg2": {"success": False, "time": 0, "error": ""},
         "sqlalchemy": {"success": False, "time": 0, "error": ""},
     }
-    
+
     # Test 1: psycopg2
     try:
         start = time.time()
@@ -65,17 +66,17 @@ def test_connection(config):
         cur.execute("SELECT COUNT(*) FROM information_schema.tables;")
         table_count = cur.fetchone()[0]
         elapsed = time.time() - start
-        
+
         results["psycopg2"]["success"] = True
         results["psycopg2"]["time"] = elapsed
-        results["psycopg2"]["version"] = version.split(',')[0]
+        results["psycopg2"]["version"] = version.split(",")[0]
         results["psycopg2"]["tables"] = table_count
-        
+
         cur.close()
         conn.close()
     except Exception as e:
         results["psycopg2"]["error"] = str(e)
-    
+
     # Test 2: SQLAlchemy
     try:
         start = time.time()
@@ -85,7 +86,7 @@ def test_connection(config):
             f"{config['host']}:{config['port']}/{config['database']}"
             f"?sslmode=require&connect_timeout=15"
         )
-        
+
         engine = create_engine(
             conn_string,
             pool_pre_ping=True,
@@ -95,26 +96,28 @@ def test_connection(config):
             connect_args={
                 "sslmode": "require",
                 "connect_timeout": 15,
-            }
+            },
         )
-        
+
         with engine.connect() as conn:
             result = conn.execute(text("SELECT version();"))
             version = result.fetchone()[0]
-            result = conn.execute(text("SELECT COUNT(*) FROM information_schema.tables;"))
+            result = conn.execute(
+                text("SELECT COUNT(*) FROM information_schema.tables;")
+            )
             table_count = result.fetchone()[0]
-        
+
         elapsed = time.time() - start
-        
+
         results["sqlalchemy"]["success"] = True
         results["sqlalchemy"]["time"] = elapsed
-        results["sqlalchemy"]["version"] = version.split(',')[0]
+        results["sqlalchemy"]["version"] = version.split(",")[0]
         results["sqlalchemy"]["tables"] = table_count
-        
+
         engine.dispose()
     except Exception as e:
         results["sqlalchemy"]["error"] = str(e)
-    
+
     return results
 
 
@@ -124,9 +127,9 @@ def main():
     print("=" * 100)
     print("\nTesting which port works best for Streamlit Cloud deployment...")
     print()
-    
+
     working_configs = []
-    
+
     for config in CONFIGS:
         print(f"\n{'='*100}")
         print(f"Testing: {config['name']}")
@@ -135,9 +138,9 @@ def main():
         print(f"Port: {config['port']}")
         print(f"Description: {config['description']}")
         print()
-        
+
         results = test_connection(config)
-        
+
         # Display psycopg2 results
         print("📊 psycopg2 Test:")
         print("-" * 100)
@@ -149,9 +152,9 @@ def main():
         else:
             print(f"❌ FAILED")
             print(f"   Error: {results['psycopg2']['error']}")
-        
+
         print()
-        
+
         # Display SQLAlchemy results
         print("📊 SQLAlchemy Test:")
         print("-" * 100)
@@ -163,35 +166,40 @@ def main():
         else:
             print(f"❌ FAILED")
             print(f"   Error: {results['sqlalchemy']['error']}")
-        
+
         # Check if both passed
         if results["psycopg2"]["success"] and results["sqlalchemy"]["success"]:
-            working_configs.append({
-                "config": config,
-                "avg_time": (results["psycopg2"]["time"] + results["sqlalchemy"]["time"]) / 2
-            })
+            working_configs.append(
+                {
+                    "config": config,
+                    "avg_time": (
+                        results["psycopg2"]["time"] + results["sqlalchemy"]["time"]
+                    )
+                    / 2,
+                }
+            )
             print()
             print("🎉 BOTH TESTS PASSED!")
-    
+
     # Summary
     print("\n" + "=" * 100)
     print("SUMMARY & RECOMMENDATIONS")
     print("=" * 100)
-    
+
     if working_configs:
         # Sort by connection time
         working_configs.sort(key=lambda x: x["avg_time"])
-        
+
         print(f"\n✅ {len(working_configs)} configuration(s) working:")
         print()
-        
+
         for i, wc in enumerate(working_configs, 1):
             config = wc["config"]
             print(f"{i}. {config['name']} (Port {config['port']})")
             print(f"   Average connection time: {wc['avg_time']:.3f}s")
             print(f"   {config['description']}")
             print()
-        
+
         # Recommendation
         best = working_configs[0]["config"]
         print("🏆 RECOMMENDED FOR STREAMLIT CLOUD:")
@@ -206,7 +214,7 @@ def main():
         print(f'DB_USER = "{best["user"]}"')
         print(f'DB_PASSWORD = "{best["password"]}"')
         print()
-        
+
     else:
         print("\n❌ No working configurations found!")
         print("\nPossible issues:")
@@ -214,7 +222,7 @@ def main():
         print("2. Verify the password is correct")
         print("3. Check Supabase dashboard for any IP restrictions")
         print("4. Ensure your project supports the connection modes")
-    
+
     print("=" * 100)
 
 
