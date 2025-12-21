@@ -51,7 +51,6 @@ def load_assessment_data():
         ncessch,
         year_json::int as year,
         econ_disadvantaged,
-        grade,
         math_test_num_valid::numeric as math_valid,
         math_test_pct_prof_high::numeric as math_prof_high,
         math_test_pct_prof_low::numeric as math_prof_low,
@@ -169,49 +168,62 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs(
     ]
 )
 
+# Vibrant color palettes for charts
+VIBRANT_COLORS = [
+    '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', 
+    '#DDA0DD', '#98D8C8', '#F7DC6F', '#BB8FCE', '#85C1E9',
+    '#F8B500', '#FF6F61', '#6B5B95', '#88B04B', '#F7CAC9'
+]
+RAINBOW_SCALE = ['#FF0000', '#FF7F00', '#FFFF00', '#00FF00', '#0000FF', '#4B0082', '#9400D3']
+SUNSET_SCALE = ['#F94144', '#F3722C', '#F8961E', '#F9C74F', '#90BE6D', '#43AA8B', '#577590']
+
 # ==================== TAB 1: Test Score Analysis ====================
 with tab1:
     st.subheader("📊 Test Score Analysis by Demographics")
 
     if not assessment_df.empty:
-        col1, col2, col3 = st.columns(3)
+        # Use a form to prevent re-running on every filter change
+        with st.form(key="tab1_filters"):
+            col1, col2, col3 = st.columns(3)
 
-        with col1:
-            # Race/Ethnicity filter
-            race_options = assessment_df["race"].dropna().unique().tolist()
-            if race_options:
-                selected_races = st.multiselect(
-                    "Select Race/Ethnicity",
-                    options=sorted(race_options),
-                    default=race_options[:5]
-                    if len(race_options) >= 5
-                    else race_options,
-                    key="race_filter_1",
-                )
-            else:
-                selected_races = []
+            with col1:
+                # Race/Ethnicity filter
+                race_options = assessment_df["race"].dropna().unique().tolist()
+                if race_options:
+                    selected_races = st.multiselect(
+                        "Select Race/Ethnicity",
+                        options=sorted(race_options),
+                        default=race_options[:5]
+                        if len(race_options) >= 5
+                        else race_options,
+                        key="race_filter_1",
+                    )
+                else:
+                    selected_races = []
 
-        with col2:
-            # Year filter
-            years = sorted(assessment_df["year"].dropna().unique())
-            if len(years) > 0:
-                selected_years = st.multiselect(
-                    "Select Years",
-                    options=years,
-                    default=[max(years)] if years else [],
+            with col2:
+                # Year filter
+                years = sorted(assessment_df["year"].dropna().unique())
+                if len(years) > 0:
+                    selected_years = st.multiselect(
+                        "Select Years",
+                        options=years,
+                        default=[max(years)] if years else [],
                     key="year_filter_1",
                 )
             else:
                 selected_years = []
 
-        with col3:
-            # Score type selection
-            score_type = st.radio(
-                "Score Type",
-                ["Math", "Reading", "Both"],
-                horizontal=True,
-                key="score_type_1",
-            )
+            with col3:
+                # Score type selection
+                score_type = st.radio(
+                    "Score Type",
+                    ["Math", "Reading", "Both"],
+                    horizontal=True,
+                    key="score_type_1",
+                )
+            
+            submit_tab1 = st.form_submit_button("🔍 Apply Filters", use_container_width=True)
 
         # Filter data
         filtered_df = assessment_df.copy()
@@ -254,10 +266,11 @@ with tab1:
                         x="Math Proficiency (%)",
                         orientation="h",
                         title="Math Proficiency by Race/Ethnicity",
-                        color="Math Proficiency (%)",
-                        color_continuous_scale="Blues",
+                        color="Race",
+                        color_discrete_sequence=VIBRANT_COLORS,
                     )
                     fig_math.update_layout(height=400, showlegend=False)
+                    fig_math.update_traces(marker_line_width=1.5, marker_line_color='white')
                     st.plotly_chart(fig_math, use_container_width=True)
 
             with col_b:
@@ -270,10 +283,11 @@ with tab1:
                         x="Reading Proficiency (%)",
                         orientation="h",
                         title="Reading Proficiency by Race/Ethnicity",
-                        color="Reading Proficiency (%)",
-                        color_continuous_scale="Greens",
+                        color="Race",
+                        color_discrete_sequence=SUNSET_SCALE,
                     )
                     fig_read.update_layout(height=400, showlegend=False)
+                    fig_read.update_traces(marker_line_width=1.5, marker_line_color='white')
                     st.plotly_chart(fig_read, use_container_width=True)
 
             # Combined comparison chart
@@ -285,7 +299,9 @@ with tab1:
                     name="Math Proficiency",
                     x=race_scores["Race"],
                     y=race_scores["Math Proficiency (%)"],
-                    marker_color="steelblue",
+                    marker_color='#FF6B6B',
+                    marker_line_width=1.5,
+                    marker_line_color='white',
                 )
             )
             fig_comparison.add_trace(
@@ -293,7 +309,9 @@ with tab1:
                     name="Reading Proficiency",
                     x=race_scores["Race"],
                     y=race_scores["Reading Proficiency (%)"],
-                    marker_color="forestgreen",
+                    marker_color='#4ECDC4',
+                    marker_line_width=1.5,
+                    marker_line_color='white',
                 )
             )
             fig_comparison.update_layout(
@@ -302,6 +320,8 @@ with tab1:
                 xaxis_title="Race/Ethnicity",
                 yaxis_title="Proficiency (%)",
                 height=450,
+                plot_bgcolor='rgba(0,0,0,0)',
+                paper_bgcolor='rgba(0,0,0,0)',
             )
             st.plotly_chart(fig_comparison, use_container_width=True)
 
@@ -316,8 +336,10 @@ with tab1:
                 color="Race",
                 hover_name="Race",
                 title="Math vs Reading Proficiency (bubble size = test count)",
+                color_discrete_sequence=VIBRANT_COLORS,
             )
             fig_scatter.update_layout(height=450)
+            fig_scatter.update_traces(marker=dict(line=dict(width=2, color='white')))
             st.plotly_chart(fig_scatter, use_container_width=True)
 
             # Data table
@@ -350,25 +372,29 @@ with tab2:
             "females_10_14"
         ].fillna(0)
 
-        col1, col2 = st.columns(2)
+        # Use a form to prevent re-running on every filter change
+        with st.form(key="tab2_filters"):
+            col1, col2 = st.columns(2)
 
-        with col1:
-            # Population filter
-            pop_range = st.slider(
-                "Population Range",
-                min_value=int(census_df["total_pop"].min()),
-                max_value=min(int(census_df["total_pop"].max()), 100000),
-                value=(1000, 50000),
-                key="pop_filter_2",
-            )
+            with col1:
+                # Population filter
+                pop_range = st.slider(
+                    "Population Range",
+                    min_value=int(census_df["total_pop"].min()),
+                    max_value=min(int(census_df["total_pop"].max()), 100000),
+                    value=(1000, 50000),
+                    key="pop_filter_2",
+                )
 
-        with col2:
-            # Income filter
-            income_filter = st.selectbox(
-                "Income Level Focus",
-                ["All", "High Income ($220K+)", "Upper Middle ($150K-$200K)"],
-                key="income_filter_2",
-            )
+            with col2:
+                # Income filter
+                income_filter = st.selectbox(
+                    "Income Level Focus",
+                    ["All", "High Income ($220K+)", "Upper Middle ($150K-$200K)"],
+                    key="income_filter_2",
+                )
+            
+            submit_tab2 = st.form_submit_button("🔍 Apply Filters", use_container_width=True)
 
         # Filter by population
         demo_filtered = census_df[
@@ -404,9 +430,14 @@ with tab2:
                     values="Population",
                     names="Ethnicity",
                     title="Children Ages 10-14 by Ethnicity",
-                    color_discrete_sequence=px.colors.qualitative.Set2,
+                    color_discrete_sequence=['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4'],
+                    hole=0.3,
                 )
-                fig_pie.update_traces(textposition="inside", textinfo="percent+label")
+                fig_pie.update_traces(
+                    textposition="inside", 
+                    textinfo="percent+label",
+                    marker=dict(line=dict(color='white', width=2))
+                )
                 st.plotly_chart(fig_pie, use_container_width=True)
 
             with col_b:
@@ -426,10 +457,13 @@ with tab2:
                     values="Population",
                     names="Gender",
                     title="Children Ages 10-14 by Gender",
-                    color_discrete_map={"Male": "#4A90D9", "Female": "#E94B87"},
+                    color_discrete_map={"Male": "#45B7D1", "Female": "#FF6B6B"},
+                    hole=0.3,
                 )
                 fig_gender.update_traces(
-                    textposition="inside", textinfo="percent+label"
+                    textposition="inside", 
+                    textinfo="percent+label",
+                    marker=dict(line=dict(color='white', width=2))
                 )
                 st.plotly_chart(fig_gender, use_container_width=True)
 
@@ -450,12 +484,13 @@ with tab2:
                 nbins=30,
                 title="Distribution of High Income Households ($220K+) by ZIP Code",
                 labels={"pct_high_income": "% High Income Households"},
-                color_discrete_sequence=["#2E86AB"],
+                color_discrete_sequence=["#F8961E"],
             )
             fig_income.update_layout(
                 xaxis_title="% of Households Earning $220K+",
                 yaxis_title="Number of ZIP Codes",
             )
+            fig_income.update_traces(marker_line_width=1, marker_line_color='white')
             st.plotly_chart(fig_income, use_container_width=True)
 
             # Top ZIP codes by ethnicity concentration
@@ -531,55 +566,59 @@ with tab3:
             school_df["latitude"].notna() & school_df["longitude"].notna()
         ].copy()
 
-        col1, col2, col3 = st.columns(3)
+        # Use a form to prevent re-running on every filter change
+        with st.form(key="tab3_filters"):
+            col1, col2, col3 = st.columns(3)
 
-        with col1:
-            # State filter
-            if "state" in schools_with_location.columns:
-                states = sorted(
-                    schools_with_location["state"].dropna().unique().tolist()
-                )
-                selected_states = st.multiselect(
-                    "Select States",
-                    options=states,
-                    default=states[:5] if len(states) >= 5 else states,
-                    key="state_filter_3",
-                )
-            else:
-                selected_states = []
+            with col1:
+                # State filter
+                if "state" in schools_with_location.columns:
+                    states = sorted(
+                        schools_with_location["state"].dropna().unique().tolist()
+                    )
+                    selected_states = st.multiselect(
+                        "Select States",
+                        options=states,
+                        default=states[:5] if len(states) >= 5 else states,
+                        key="state_filter_3",
+                    )
+                else:
+                    selected_states = []
 
-        with col2:
-            # School type filter
-            if "school_type" in schools_with_location.columns:
-                school_types = (
-                    schools_with_location["school_type"].dropna().unique().tolist()
-                )
-                selected_types = st.multiselect(
-                    "School Type",
-                    options=school_types,
-                    default=school_types,
-                    key="school_type_filter_3",
-                )
-            else:
-                selected_types = []
+            with col2:
+                # School type filter
+                if "school_type" in schools_with_location.columns:
+                    school_types = (
+                        schools_with_location["school_type"].dropna().unique().tolist()
+                    )
+                    selected_types = st.multiselect(
+                        "School Type",
+                        options=school_types,
+                        default=school_types,
+                        key="school_type_filter_3",
+                    )
+                else:
+                    selected_types = []
 
-        with col3:
-            # Enrollment filter
-            if "enrollment" in schools_with_location.columns:
-                max_enrollment = (
-                    int(schools_with_location["enrollment"].max())
-                    if not schools_with_location["enrollment"].isna().all()
-                    else 5000
-                )
-                enrollment_range = st.slider(
-                    "Enrollment Range",
-                    min_value=0,
-                    max_value=min(max_enrollment, 5000),
-                    value=(0, min(max_enrollment, 5000)),
-                    key="enrollment_filter_3",
-                )
-            else:
-                enrollment_range = (0, 5000)
+            with col3:
+                # Enrollment filter
+                if "enrollment" in schools_with_location.columns:
+                    max_enrollment = (
+                        int(schools_with_location["enrollment"].max())
+                        if not schools_with_location["enrollment"].isna().all()
+                        else 5000
+                    )
+                    enrollment_range = st.slider(
+                        "Enrollment Range",
+                        min_value=0,
+                        max_value=min(max_enrollment, 5000),
+                        value=(0, min(max_enrollment, 5000)),
+                        key="enrollment_filter_3",
+                    )
+                else:
+                    enrollment_range = (0, 5000)
+            
+            submit_tab3 = st.form_submit_button("🔍 Apply Filters", use_container_width=True)
 
         # Filter schools
         map_df = schools_with_location.copy()
@@ -626,6 +665,7 @@ with tab3:
                 mapbox_style="carto-positron",
                 zoom=3,
                 height=600,
+                color_discrete_sequence=VIBRANT_COLORS,
             )
             fig_map.update_layout(margin={"r": 0, "t": 50, "l": 0, "b": 0})
             st.plotly_chart(fig_map, use_container_width=True)
@@ -662,9 +702,10 @@ with tab3:
                     orientation="h",
                     title="Top 15 States by Number of Schools",
                     color="Number of Schools",
-                    color_continuous_scale="Viridis",
+                    color_continuous_scale="turbo",
                 )
                 fig_states.update_layout(height=400, showlegend=False)
+                fig_states.update_traces(marker_line_width=1, marker_line_color='white')
                 st.plotly_chart(fig_states, use_container_width=True)
 
             with col_b:
@@ -677,9 +718,10 @@ with tab3:
                     orientation="h",
                     title="Top 15 States by Total Enrollment",
                     color="Total Enrollment",
-                    color_continuous_scale="Plasma",
+                    color_continuous_scale="rainbow",
                 )
                 fig_enrollment.update_layout(height=400, showlegend=False)
+                fig_enrollment.update_traces(marker_line_width=1, marker_line_color='white')
                 st.plotly_chart(fig_enrollment, use_container_width=True)
 
             # ZIP code heatmap
@@ -705,6 +747,7 @@ with tab3:
                     zoom=3,
                     title="School Density by Location",
                     height=500,
+                    color_continuous_scale="hot",
                 )
                 fig_heat.update_layout(margin={"r": 0, "t": 50, "l": 0, "b": 0})
                 st.plotly_chart(fig_heat, use_container_width=True)
@@ -725,23 +768,27 @@ with tab4:
         years = sorted(assessment_df["year"].dropna().unique())
 
         if len(years) > 1:
-            col1, col2 = st.columns(2)
+            # Use a form to prevent re-running on every filter change
+            with st.form(key="tab4_filters"):
+                col1, col2 = st.columns(2)
 
-            with col1:
-                race_for_trend = st.multiselect(
-                    "Select Race/Ethnicity for Trend",
-                    options=sorted(assessment_df["race"].dropna().unique()),
-                    default=list(assessment_df["race"].dropna().unique())[:4],
-                    key="race_trend_4",
-                )
+                with col1:
+                    race_for_trend = st.multiselect(
+                        "Select Race/Ethnicity for Trend",
+                        options=sorted(assessment_df["race"].dropna().unique()),
+                        default=list(assessment_df["race"].dropna().unique())[:4],
+                        key="race_trend_4",
+                    )
 
-            with col2:
-                score_metric = st.radio(
-                    "Score Metric",
-                    ["Math Proficiency", "Reading Proficiency"],
-                    horizontal=True,
-                    key="score_metric_4",
-                )
+                with col2:
+                    score_metric = st.radio(
+                        "Score Metric",
+                        ["Math Proficiency", "Reading Proficiency"],
+                        horizontal=True,
+                        key="score_metric_4",
+                    )
+                
+                submit_tab4 = st.form_submit_button("🔍 Apply Filters", use_container_width=True)
 
             score_col = (
                 "math_prof_mid"
@@ -765,6 +812,7 @@ with tab4:
                     markers=True,
                     title=f"{score_metric} Trends by Race/Ethnicity Over Time",
                     line_shape="spline",
+                    color_discrete_sequence=VIBRANT_COLORS,
                 )
                 fig_trend.update_layout(
                     xaxis_title="Year",
@@ -772,6 +820,7 @@ with tab4:
                     height=500,
                     hovermode="x unified",
                 )
+                fig_trend.update_traces(line=dict(width=3), marker=dict(size=10))
                 st.plotly_chart(fig_trend, use_container_width=True)
 
                 # Year-over-year change
@@ -792,8 +841,10 @@ with tab4:
                         color="Race",
                         barmode="group",
                         title="Year-over-Year Change in Proficiency",
+                        color_discrete_sequence=VIBRANT_COLORS,
                     )
                     fig_yoy.update_layout(height=400)
+                    fig_yoy.update_traces(marker_line_width=1, marker_line_color='white')
                     st.plotly_chart(fig_yoy, use_container_width=True)
         else:
             st.info(
@@ -844,7 +895,9 @@ with tab5:
                 color="Subject",
                 barmode="group",
                 title="Average Proficiency by Race/Ethnicity",
+                color_discrete_sequence=['#FF6B6B', '#4ECDC4'],
             )
+            fig1.update_traces(marker_line_width=1.5, marker_line_color='white')
             st.plotly_chart(fig1, use_container_width=True)
 
         elif chart1_type == "Income Distribution" and not census_df.empty:
@@ -856,7 +909,9 @@ with tab5:
                 x="high_income_pct",
                 nbins=40,
                 title="Distribution of High Income Households",
+                color_discrete_sequence=['#96CEB4'],
             )
+            fig1.update_traces(marker_line_width=1, marker_line_color='white')
             st.plotly_chart(fig1, use_container_width=True)
 
         elif chart1_type == "School Enrollment" and not school_df.empty:
@@ -866,7 +921,9 @@ with tab5:
                 x="enrollment",
                 nbins=50,
                 title="School Enrollment Distribution",
+                color_discrete_sequence=['#45B7D1'],
             )
+            fig1.update_traces(marker_line_width=1, marker_line_color='white')
             st.plotly_chart(fig1, use_container_width=True)
 
         elif chart1_type == "Population by ZIP" and not census_df.empty:
@@ -876,7 +933,10 @@ with tab5:
                 x="zip_code",
                 y="total_pop",
                 title="Top 20 ZIP Codes by Population",
+                color="total_pop",
+                color_continuous_scale="turbo",
             )
+            fig1.update_traces(marker_line_width=1, marker_line_color='white')
             st.plotly_chart(fig1, use_container_width=True)
 
     with col2:
@@ -907,7 +967,10 @@ with tab5:
                 values="Count",
                 names="Gender",
                 title="Gender Distribution (Ages 10-14)",
+                color_discrete_sequence=['#45B7D1', '#FF6B6B'],
+                hole=0.4,
             )
+            fig2.update_traces(marker=dict(line=dict(color='white', width=2)))
             st.plotly_chart(fig2, use_container_width=True)
 
         elif chart2_type == "Ethnicity Breakdown" and not census_df.empty:
@@ -929,7 +992,10 @@ with tab5:
                 values="Count",
                 names="Ethnicity",
                 title="Ethnicity Breakdown (Ages 10-14)",
+                color_discrete_sequence=['#FF6B6B', '#4ECDC4', '#FFEAA7'],
+                hole=0.4,
             )
+            fig2.update_traces(marker=dict(line=dict(color='white', width=2)))
             st.plotly_chart(fig2, use_container_width=True)
 
         elif chart2_type == "School Types" and not school_df.empty:
@@ -940,7 +1006,10 @@ with tab5:
                 values="Count",
                 names="Type",
                 title="School Types Distribution",
+                color_discrete_sequence=VIBRANT_COLORS,
+                hole=0.4,
             )
+            fig2.update_traces(marker=dict(line=dict(color='white', width=2)))
             st.plotly_chart(fig2, use_container_width=True)
 
         elif chart2_type == "Income vs Population" and not census_df.empty:
@@ -952,7 +1021,9 @@ with tab5:
                 y="high_income",
                 title="High Income Households vs Total Population",
                 trendline="ols",
+                color_discrete_sequence=['#FF6B6B'],
             )
+            fig2.update_traces(marker=dict(size=8, line=dict(width=1, color='white')))
             st.plotly_chart(fig2, use_container_width=True)
 
     # Quick stats

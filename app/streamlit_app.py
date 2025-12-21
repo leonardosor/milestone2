@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-ETL & Analytics Platform
-Main Streamlit Application Entry Point
+Home Page
+Census & Education Data Analytics Platform
 """
 
 import sys
@@ -14,8 +14,8 @@ sys.path.append(str(Path(__file__).parent / "etl_modules"))
 
 # Page configuration
 st.set_page_config(
-    page_title="Demographic and Academic Performance",
-    page_icon="📊",
+    page_title="Home - Census & Education Analytics",
+    page_icon="🏠",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -52,7 +52,7 @@ st.markdown(
 
 # Title
 st.markdown(
-    '<div class="main-header">📊 Census & Education Data Platform</div>',
+    '<div class="main-header">🏠 Census & Education Data Platform</div>',
     unsafe_allow_html=True,
 )
 st.markdown("---")
@@ -62,16 +62,17 @@ st.sidebar.title("🧭 Navigation")
 st.sidebar.info(
     """
     **This application provides:**
-    - Interactive database exploration
+    - Interactive analytics & visualizations
+    - Database exploration
     - ML model insights
     """
 )
 
 st.sidebar.markdown("---")
 st.sidebar.markdown("### Quick Links")
-st.sidebar.markdown("- 🗄️ [Database Explorer](/1_Database_Explorer)")
-st.sidebar.markdown("- 🤖 [ML Dashboard](/2_ML_Dashboard)")
-st.sidebar.markdown("- 🗺️ [Interactive Analytics](/3_Interactive_Analytics)")
+st.sidebar.markdown("- 🗺️ [Interactive Analytics](/0_Interactive_Analytics)")
+st.sidebar.markdown("- 🗄️ [Database Explorer](/2_Database_Explorer)")
+st.sidebar.markdown("- 🤖 [ML Dashboard](/3_ML_Dashboard)")
 
 
 # Debug: Check secrets configuration
@@ -124,9 +125,57 @@ with st.expander("🔍 Debug: Secrets Configuration", expanded=False):
 # Main page content - Feature overview
 st.subheader("Welcome to the Data Platform")
 
+# Project Motivation Section
+st.markdown("""
+### 🎯 Project Motivation
+
+This project provides a **production-ready analytics platform** for exploring the relationship between 
+**demographic factors and academic performance** across the United States.
+
+#### Why This Matters
+Understanding how demographics influence educational outcomes is crucial for:
+- 📚 **Educational Policy**: Identifying achievement gaps across different populations
+- 💰 **Resource Allocation**: Understanding how socioeconomic factors correlate with school performance
+- 🗺️ **Geographic Insights**: Visualizing regional patterns in education and demographics
+- 📊 **Data-Driven Decisions**: Providing actionable insights for educators and policymakers
+
+#### Data Sources
+- **US Census Bureau API**: Demographics, household income, age distributions by ZIP code
+- **Urban Institute Education Data API**: School directories, enrollment, and test scores
+- **Geographic Data (TIGER/Line)**: US Census Bureau shapefiles for mapping
+
+#### Key Features
+- Multi-year trend analysis of test scores by race/ethnicity and gender
+- Interactive geographic maps showing school distributions
+- Demographic breakdowns with income and population filters
+- Custom dashboard builder for personalized analysis
+""")
+
+st.markdown("---")
+st.subheader("📱 Platform Features")
+
 col1, col2, col3 = st.columns(3)
 
 with col1:
+    st.markdown("### 🗺️ Interactive Analytics")
+    st.markdown(
+        """
+        <div class="feature-box">
+        Advanced data exploration:
+        <ul>
+        <li>Filter by ethnicity & demographics</li>
+        <li>Test score analysis by race</li>
+        <li>Interactive state/ZIP maps</li>
+        <li><b>🎯 Custom dashboard builder</b></li>
+        </ul>
+        <br>
+        <b>Actions:</b> Explore maps, filter data, build custom views
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+with col2:
     st.markdown("### 🗄️ Database Explorer")
     st.markdown(
         """
@@ -145,7 +194,7 @@ with col1:
         unsafe_allow_html=True,
     )
 
-with col2:
+with col3:
     st.markdown("### 🤖 ML Dashboard")
     st.markdown(
         """
@@ -158,25 +207,6 @@ with col2:
         </ul>
         <br>
         <b>Actions:</b> Review ML results and insights
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-with col3:
-    st.markdown("### 🗺️ Interactive Analytics")
-    st.markdown(
-        """
-        <div class="feature-box">
-        Advanced data exploration:
-        <ul>
-        <li>Filter by ethnicity & demographics</li>
-        <li>Test score analysis by race</li>
-        <li>Interactive state/ZIP maps</li>
-        <li><b>🎯 Custom dashboard builder</b></li>
-        </ul>
-        <br>
-        <b>Actions:</b> Explore maps, filter data, build custom views
         </div>
         """,
         unsafe_allow_html=True,
