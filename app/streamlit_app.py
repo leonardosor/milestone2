@@ -75,61 +75,15 @@ st.sidebar.markdown("- 🗄️ [Database Explorer](/2_Database_Explorer)")
 st.sidebar.markdown("- 🤖 [ML Dashboard](/3_ML_Dashboard)")
 
 
-# Debug: Check secrets configuration
-with st.expander("🔍 Debug: Secrets Configuration", expanded=False):
-    import os
-
-    st.write("**Secrets Status:**")
-
-    secrets_exist = False
-    database_in_secrets = False
-
-    try:
-        if hasattr(st, "secrets") and "database" in st.secrets:
-            secrets_exist = True
-            database_in_secrets = True
-            st.success("✓ st.secrets exists")
-            st.success("✓ 'database' section found in secrets")
-            st.write("**Database config keys:**", list(st.secrets["database"].keys()))
-            st.write("**DB_HOST:**", st.secrets["database"].get("DB_HOST", "NOT FOUND"))
-            st.write("**DB_PORT:**", st.secrets["database"].get("DB_PORT", "NOT FOUND"))
-    except Exception:
-        st.info("ℹ️ No secrets file found (this is normal for Railway/Docker)")
-
-    st.write("---")
-    st.write("**Current Database Connection:**")
-
-    # Show what values are actually being used
-    if database_in_secrets:
-        try:
-            st.write("Using Streamlit secrets:")
-            st.write("- Host:", st.secrets["database"]["DB_HOST"])
-            st.write("- Port:", st.secrets["database"].get("DB_PORT", "5432"))
-        except Exception:
-            pass
-    else:
-        st.write("Using environment variables:")
-        st.write("- Host:", os.getenv("DB_HOST", "localhost"))
-        st.write("- Port:", os.getenv("DB_PORT", "5432"))
-        st.write("- Database:", os.getenv("DB_NAME", "milestone2"))
-        st.write("- User:", os.getenv("DB_USER", "postgres"))
-        st.write("- Schema:", os.getenv("DB_SCHEMA", "public"))
-
-    # Clear cache button
-    if st.button("🔄 Clear Cache & Reconnect"):
-        st.cache_resource.clear()
-        st.cache_data.clear()
-        st.success("Cache cleared! Page will reload...")
-        st.rerun()
-
 # Main page content - Feature overview
 st.subheader("Welcome to the Data Platform")
 
 # Project Motivation Section
-st.markdown("""
+st.markdown(
+    """
 ### 🎯 Project Motivation
 
-This project provides a **production-ready analytics platform** for exploring the relationship between 
+This project provides a **production-ready analytics platform** for exploring the relationship between
 **demographic factors and academic performance** across the United States.
 
 #### Why This Matters
@@ -149,7 +103,8 @@ Understanding how demographics influence educational outcomes is crucial for:
 - Interactive geographic maps showing school distributions
 - Demographic breakdowns with income and population filters
 - Custom dashboard builder for personalized analysis
-""")
+"""
+)
 
 st.markdown("---")
 st.subheader("📱 Platform Features")

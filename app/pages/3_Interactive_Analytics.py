@@ -170,7 +170,7 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs(
 
 # Vibrant color palettes for charts
 VIBRANT_COLORS = [
-    '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7',
+    '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', 
     '#DDA0DD', '#98D8C8', '#F7DC6F', '#BB8FCE', '#85C1E9',
     '#F8B500', '#FF6F61', '#6B5B95', '#88B04B', '#F7CAC9'
 ]
@@ -222,7 +222,7 @@ with tab1:
                     horizontal=True,
                     key="score_type_1",
                 )
-
+            
             submit_tab1 = st.form_submit_button("🔍 Apply Filters", use_container_width=True)
 
         # Filter data
@@ -393,7 +393,7 @@ with tab2:
                     ["All", "High Income ($220K+)", "Upper Middle ($150K-$200K)"],
                     key="income_filter_2",
                 )
-
+            
             submit_tab2 = st.form_submit_button("🔍 Apply Filters", use_container_width=True)
 
         # Filter by population
@@ -434,7 +434,7 @@ with tab2:
                     hole=0.3,
                 )
                 fig_pie.update_traces(
-                    textposition="inside",
+                    textposition="inside", 
                     textinfo="percent+label",
                     marker=dict(line=dict(color='white', width=2))
                 )
@@ -461,7 +461,7 @@ with tab2:
                     hole=0.3,
                 )
                 fig_gender.update_traces(
-                    textposition="inside",
+                    textposition="inside", 
                     textinfo="percent+label",
                     marker=dict(line=dict(color='white', width=2))
                 )
@@ -617,7 +617,7 @@ with tab3:
                     )
                 else:
                     enrollment_range = (0, 5000)
-
+            
             submit_tab3 = st.form_submit_button("🔍 Apply Filters", use_container_width=True)
 
         # Filter schools
@@ -787,7 +787,7 @@ with tab4:
                         horizontal=True,
                         key="score_metric_4",
                     )
-
+                
                 submit_tab4 = st.form_submit_button("🔍 Apply Filters", use_container_width=True)
 
             score_col = (
@@ -846,204 +846,6 @@ with tab4:
                     fig_yoy.update_layout(height=400)
                     fig_yoy.update_traces(marker_line_width=1, marker_line_color='white')
                     st.plotly_chart(fig_yoy, use_container_width=True)
-            
-            # New: Student Count Trends by Sex
-            st.markdown("---")
-            st.markdown("### 👥 Student Count Trends by Sex")
-            
-            # Aggregate test counts by year and sex
-            if 'sex' in assessment_df.columns:
-                sex_trend = assessment_df.groupby(['year', 'sex']).agg({
-                    'math_valid': 'sum',
-                    'read_valid': 'sum'
-                }).reset_index()
-                sex_trend['total_students'] = sex_trend['math_valid'] + sex_trend['read_valid']
-                
-                if not sex_trend.empty:
-                    fig_sex_trend = px.line(
-                        sex_trend,
-                        x='year',
-                        y='total_students',
-                        color='sex',
-                        markers=True,
-                        title='Total Student Test Count by Sex Over Time',
-                        line_shape='spline',
-                        color_discrete_sequence=['#FF6B6B', '#4ECDC4', '#45B7D1'],
-                    )
-                    fig_sex_trend.update_layout(
-                        xaxis_title='Year',
-                        yaxis_title='Total Student Count',
-                        height=450,
-                        hovermode='x unified',
-                    )
-                    fig_sex_trend.update_traces(line=dict(width=3), marker=dict(size=10))
-                    st.plotly_chart(fig_sex_trend, use_container_width=True)
-                    
-                    # Math vs Reading by Sex
-                    col_a, col_b = st.columns(2)
-                    
-                    with col_a:
-                        fig_math_sex = px.line(
-                            sex_trend,
-                            x='year',
-                            y='math_valid',
-                            color='sex',
-                            markers=True,
-                            title='Math Test Takers by Sex Over Time',
-                            line_shape='spline',
-                            color_discrete_sequence=['#F94144', '#90BE6D', '#577590'],
-                        )
-                        fig_math_sex.update_layout(
-                            xaxis_title='Year',
-                            yaxis_title='Math Test Count',
-                            height=400,
-                        )
-                        fig_math_sex.update_traces(line=dict(width=3), marker=dict(size=8))
-                        st.plotly_chart(fig_math_sex, use_container_width=True)
-                    
-                    with col_b:
-                        fig_read_sex = px.line(
-                            sex_trend,
-                            x='year',
-                            y='read_valid',
-                            color='sex',
-                            markers=True,
-                            title='Reading Test Takers by Sex Over Time',
-                            line_shape='spline',
-                            color_discrete_sequence=['#F3722C', '#43AA8B', '#4ECDC4'],
-                        )
-                        fig_read_sex.update_layout(
-                            xaxis_title='Year',
-                            yaxis_title='Reading Test Count',
-                            height=400,
-                        )
-                        fig_read_sex.update_traces(line=dict(width=3), marker=dict(size=8))
-                        st.plotly_chart(fig_read_sex, use_container_width=True)
-            
-            # New: Score Distribution Trends
-            st.markdown("---")
-            st.markdown("### 📈 Score Distribution Trends")
-            
-            # Create score bands for trend analysis
-            score_bands_df = assessment_df.groupby('year').agg({
-                'math_prof_high': 'mean',
-                'math_prof_low': 'mean',
-                'math_prof_mid': 'mean',
-                'read_prof_high': 'mean',
-                'read_prof_low': 'mean',
-                'read_prof_mid': 'mean',
-            }).reset_index()
-            
-            if not score_bands_df.empty:
-                # Melt for easier plotting
-                math_scores = score_bands_df[['year', 'math_prof_high', 'math_prof_low', 'math_prof_mid']].melt(
-                    id_vars='year', var_name='Score Level', value_name='Proficiency'
-                )
-                math_scores['Score Level'] = math_scores['Score Level'].map({
-                    'math_prof_high': 'High Proficiency',
-                    'math_prof_mid': 'Mid Proficiency',
-                    'math_prof_low': 'Low Proficiency'
-                })
-                
-                read_scores = score_bands_df[['year', 'read_prof_high', 'read_prof_low', 'read_prof_mid']].melt(
-                    id_vars='year', var_name='Score Level', value_name='Proficiency'
-                )
-                read_scores['Score Level'] = read_scores['Score Level'].map({
-                    'read_prof_high': 'High Proficiency',
-                    'read_prof_mid': 'Mid Proficiency',
-                    'read_prof_low': 'Low Proficiency'
-                })
-                
-                col_c, col_d = st.columns(2)
-                
-                with col_c:
-                    fig_math_bands = px.line(
-                        math_scores,
-                        x='year',
-                        y='Proficiency',
-                        color='Score Level',
-                        markers=True,
-                        title='Math Proficiency Levels Over Time',
-                        line_shape='spline',
-                        color_discrete_map={
-                            'High Proficiency': '#2ECC71',
-                            'Mid Proficiency': '#F39C12',
-                            'Low Proficiency': '#E74C3C'
-                        },
-                    )
-                    fig_math_bands.update_layout(
-                        xaxis_title='Year',
-                        yaxis_title='Proficiency (%)',
-                        height=400,
-                    )
-                    fig_math_bands.update_traces(line=dict(width=3), marker=dict(size=8))
-                    st.plotly_chart(fig_math_bands, use_container_width=True)
-                
-                with col_d:
-                    fig_read_bands = px.line(
-                        read_scores,
-                        x='year',
-                        y='Proficiency',
-                        color='Score Level',
-                        markers=True,
-                        title='Reading Proficiency Levels Over Time',
-                        line_shape='spline',
-                        color_discrete_map={
-                            'High Proficiency': '#27AE60',
-                            'Mid Proficiency': '#E67E22',
-                            'Low Proficiency': '#C0392B'
-                        },
-                    )
-                    fig_read_bands.update_layout(
-                        xaxis_title='Year',
-                        yaxis_title='Proficiency (%)',
-                        height=400,
-                    )
-                    fig_read_bands.update_traces(line=dict(width=3), marker=dict(size=8))
-                    st.plotly_chart(fig_read_bands, use_container_width=True)
-            
-            # Combined Sex and Score Analysis
-            st.markdown("---")
-            st.markdown("### 🎯 Combined Analysis: Sex × Score Trends")
-            
-            if 'sex' in assessment_df.columns:
-                sex_score_trend = assessment_df.groupby(['year', 'sex']).agg({
-                    'math_prof_mid': 'mean',
-                    'read_prof_mid': 'mean',
-                }).reset_index()
-                
-                if not sex_score_trend.empty:
-                    # Create combined metric
-                    sex_score_melted = sex_score_trend.melt(
-                        id_vars=['year', 'sex'],
-                        value_vars=['math_prof_mid', 'read_prof_mid'],
-                        var_name='Subject',
-                        value_name='Proficiency'
-                    )
-                    sex_score_melted['Subject'] = sex_score_melted['Subject'].map({
-                        'math_prof_mid': 'Math',
-                        'read_prof_mid': 'Reading'
-                    })
-                    sex_score_melted['Category'] = sex_score_melted['sex'] + ' - ' + sex_score_melted['Subject']
-                    
-                    fig_combined = px.line(
-                        sex_score_melted,
-                        x='year',
-                        y='Proficiency',
-                        color='Category',
-                        markers=True,
-                        title='Proficiency Trends by Sex and Subject',
-                        line_shape='spline',
-                        color_discrete_sequence=VIBRANT_COLORS,
-                    )
-                    fig_combined.update_layout(
-                        xaxis_title='Year',
-                        yaxis_title='Proficiency (%)',
-                        height=500,
-                        hovermode='x unified',
-                    )
-                    fig_combined.update_traces(line=dict(width=3), marker=dict(size=10))
-                    st.plotly_chart(fig_combined, use_container_width=True)
         else:
             st.info(
                 "Multiple years of data required for trend analysis. Only one year available."
