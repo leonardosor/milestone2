@@ -209,10 +209,10 @@ with tab1:
                         "Select Years",
                         options=years,
                         default=[max(years)] if years else [],
-                    key="year_filter_1",
-                )
-            else:
-                selected_years = []
+                        key="year_filter_1",
+                    )
+                else:
+                    selected_years = []
 
             with col3:
                 # Score type selection
