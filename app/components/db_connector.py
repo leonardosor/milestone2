@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Database Connector Component for Streamlit Application
+Database Connector Component for Web Applications
 
 Provides database connectivity, query execution, and data retrieval
-functionality for the Streamlit interface.
+functionality. Compatible with both Streamlit and Taipy frameworks.
 """
 
 import os
@@ -11,8 +11,32 @@ from typing import Dict, List
 from urllib.parse import quote_plus
 
 import pandas as pd
-import streamlit as st
 from sqlalchemy import create_engine, text
+
+# Try to import streamlit, but don't fail if it's not available
+try:
+    import streamlit as st
+
+    HAS_STREAMLIT = True
+except ImportError:
+    HAS_STREAMLIT = False
+    st = None
+
+
+def _show_error(message: str):
+    """Show error message - uses Streamlit if available, otherwise prints."""
+    if HAS_STREAMLIT and st is not None:
+        _show_error(message)
+    else:
+        print(f"ERROR: {message}")
+
+
+def _show_warning(message: str):
+    """Show warning message - uses Streamlit if available, otherwise prints."""
+    if HAS_STREAMLIT and st is not None:
+        _show_warning(message)
+    else:
+        print(f"WARNING: {message}")
 
 
 class DatabaseConnector:
@@ -57,12 +81,13 @@ class DatabaseConnector:
         try:
             # Try to get credentials from Streamlit secrets first (for Cloud deployment)
             use_secrets = False
-            try:
-                if hasattr(st, "secrets") and "database" in st.secrets:
-                    use_secrets = True
-            except Exception:
-                # Secrets file doesn't exist, use environment variables
-                pass
+            if HAS_STREAMLIT and st is not None:
+                try:
+                    if hasattr(st, "secrets") and "database" in st.secrets:
+                        use_secrets = True
+                except Exception:
+                    # Secrets file doesn't exist, use environment variables
+                    pass
 
             if use_secrets:
                 host = st.secrets["database"]["DB_HOST"]
@@ -115,13 +140,15 @@ class DatabaseConnector:
                 )
 
         except Exception as e:
-            st.error(f"Failed to create database engine: {e}")
+            if HAS_STREAMLIT and st is not None:
+                _show_error(f"Failed to create database engine: {e}")
+            else:
+                print(f"Failed to create database engine: {e}")
             self.engine = None
 
-    @st.cache_resource
-    def get_engine(_self):
+    def get_engine(self):
         """Return cached engine instance."""
-        return _self.engine
+        return self.engine
 
     def test_connection(self) -> bool:
         """
@@ -138,18 +165,18 @@ class DatabaseConnector:
                 conn.execute(text("SELECT 1"))
             return True
         except Exception as e:
-            st.error(f"Connection test failed: {e}")
+            _show_error(f"Connection test failed: {e}")
             return False
 
-    @st.cache_data(ttl=60)
-    def list_schemas(_self) -> List[str]:
+    # Caching removed for Taipy compatibility
+    def list_schemas(self) -> List[str]:
         """
         List all user schemas in the database.
 
         Returns:
             List of schema names
         """
-        if not _self.engine:
+        if not self.engine:
             return []
 
         query = """
@@ -160,15 +187,15 @@ class DatabaseConnector:
         """
 
         try:
-            with _self.engine.connect() as conn:
+            with self.engine.connect() as conn:
                 result = conn.execute(text(query))
                 return [row[0] for row in result.fetchall()]
         except Exception as e:
-            st.error(f"Error listing schemas: {e}")
+            _show_error(f"Error listing schemas: {e}")
             return []
 
-    @st.cache_data(ttl=60)
-    def list_tables(_self, schema: str) -> List[str]:
+    # Caching removed for Taipy compatibility
+    def list_tables(self, schema: str) -> List[str]:
         """
         List all tables in a schema.
 
@@ -178,7 +205,7 @@ class DatabaseConnector:
         Returns:
             List of table names
         """
-        if not _self.engine:
+        if not self.engine:
             return []
 
         query = """
@@ -189,15 +216,15 @@ class DatabaseConnector:
         """
 
         try:
-            with _self.engine.connect() as conn:
+            with self.engine.connect() as conn:
                 result = conn.execute(text(query), {"schema": schema})
                 return [row[0] for row in result.fetchall()]
         except Exception as e:
-            st.error(f"Error listing tables: {e}")
+            _show_error(f"Error listing tables: {e}")
             return []
 
-    @st.cache_data(ttl=300)
-    def describe_table(_self, schema: str, table: str) -> pd.DataFrame:
+    # Caching removed for Taipy compatibility
+    def describe_table(self, schema: str, table: str) -> pd.DataFrame:
         """
         Get table column information.
 
@@ -222,12 +249,12 @@ class DatabaseConnector:
         )
 
         try:
-            with _self.engine.connect() as conn:
+            with self.engine.connect() as conn:
                 result = conn.execute(query, {"schema": schema, "table": table})
                 df = pd.DataFrame(result.fetchall(), columns=result.keys())
-                return _self._make_arrow_compatible(df)
+                return self._make_arrow_compatible(df)
         except Exception as e:
-            st.error(f"Error describing table: {e}")
+            _show_error(f"Error describing table: {e}")
             return pd.DataFrame()
 
     def get_table_row_count(self, schema: str, table: str) -> int:
@@ -248,7 +275,7 @@ class DatabaseConnector:
                 result = conn.execute(text(query))
                 return result.fetchone()[0]
         except Exception as e:
-            st.error(f"Error getting row count: {e}")
+            _show_error(f"Error getting row count: {e}")
             return 0
 
     def get_table_data(
@@ -272,7 +299,7 @@ class DatabaseConnector:
             df = pd.read_sql(query, self.engine)
             return self._make_arrow_compatible(df)
         except Exception as e:
-            st.error(f"Error fetching table data: {e}")
+            _show_error(f"Error fetching table data: {e}")
             return pd.DataFrame()
 
     def execute_query(self, query: str) -> pd.DataFrame:
@@ -286,20 +313,20 @@ class DatabaseConnector:
             DataFrame with query results
         """
         if not self.engine:
-            st.error("No database connection available")
+            _show_error("No database connection available")
             return pd.DataFrame()
 
         try:
             # Check if query is SELECT (read-only)
             query_lower = query.strip().lower()
             if not query_lower.startswith("select"):
-                st.warning("Only SELECT queries are allowed in the web interface")
+                _show_warning("Only SELECT queries are allowed in the web interface")
                 return pd.DataFrame()
 
             df = pd.read_sql(query, self.engine)
             return self._make_arrow_compatible(df)
         except Exception as e:
-            st.error(f"Query execution error: {e}")
+            _show_error(f"Query execution error: {e}")
             return pd.DataFrame()
 
     def get_table_info(self, schema: str, table: str) -> Dict:
