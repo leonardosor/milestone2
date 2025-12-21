@@ -26,7 +26,7 @@ except ImportError:
 def _show_error(message: str):
     """Show error message - uses Streamlit if available, otherwise prints."""
     if HAS_STREAMLIT and st is not None:
-        _show_error(message)
+        st.error(message)
     else:
         print(f"ERROR: {message}")
 
@@ -34,7 +34,7 @@ def _show_error(message: str):
 def _show_warning(message: str):
     """Show warning message - uses Streamlit if available, otherwise prints."""
     if HAS_STREAMLIT and st is not None:
-        _show_warning(message)
+        st.warning(message)
     else:
         print(f"WARNING: {message}")
 
