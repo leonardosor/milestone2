@@ -120,10 +120,11 @@ print(
 
 home_md = """
 <|container|
-<center>
+
+<|part|class_name=text-center|
 # 📊 Census & Education Analytics Platform
 ### *Data-Driven Insights for Educational Outcomes*
-</center>
+|>
 
 ---
 
@@ -248,9 +249,9 @@ Geographic boundaries and mapping data
 
 |>
 
-<center>
+<|part|class_name=text-center|
 *Built with Taipy • Powered by PostgreSQL • Deployed on Railway*
-</center>
+|>
 
 |>
 """
@@ -274,10 +275,10 @@ analytics_md = """
 
 <|layout|columns=4 1|
 
-<center>
+<|part|class_name=text-center|
 # 🗺️ Interactive Analytics
 ### *Explore Educational Data Dynamically*
-</center>
+|>
 
 <|button|label=← Home|on_action=go_home|class_name=back-btn|>
 
@@ -310,9 +311,9 @@ analytics_md = """
 
 |>
 
-<center>
+<|part|class_name=text-center|
 <|button|label=🔍 Apply Filters & Update Chart|on_action=apply_analytics_filters|class_name=filter-btn|>
-</center>
+|>
 
 |>
 
@@ -347,9 +348,9 @@ Max: <|{pop_max}|number|label=Maximum population|>
 
 |>
 
-<center>
+<|part|class_name=text-center|
 <|button|label=🔍 Apply Demographic Filters|on_action=apply_demographic_filters|class_name=filter-btn|>
-</center>
+|>
 
 |>
 
@@ -389,9 +390,9 @@ Max: <|{enrollment_max}|number|label=Max students|>
 
 |>
 
-<center>
+<|part|class_name=text-center|
 <|button|label=🔍 Update Map|on_action=apply_map_filters|class_name=filter-btn|>
-</center>
+|>
 
 |>
 
@@ -445,10 +446,10 @@ explorer_md = """
 
 <|layout|columns=4 1|
 
-<center>
+<|part|class_name=text-center|
 # 🗄️ Database Explorer
 ### *Query and Browse Database Tables*
-</center>
+|>
 
 <|button|label=← Home|on_action=go_home|class_name=back-btn|>
 
@@ -476,10 +477,10 @@ explorer_md = """
 
 |>
 
-<center>
+<|part|class_name=text-center|
 <|button|label=📊 Load Table Data|on_action=load_table_data|class_name=filter-btn|>
 <|button|label=📥 Download CSV|on_action=download_csv|class_name=secondary-btn|>
-</center>
+|>
 
 |>
 
@@ -502,9 +503,9 @@ explorer_md = """
 **SQL Editor**
 <|{sql_query}|input|multiline|lines=10|class_name=sql-editor|label=Write your SELECT query|>
 
-<center>
+<|part|class_name=text-center|
 <|button|label=▶️ Execute Query|on_action=execute_query|class_name=execute-btn|>
-</center>
+|>
 
 |>
 
@@ -535,10 +536,10 @@ ml_md = """
 
 <|layout|columns=4 1|
 
-<center>
+<|part|class_name=text-center|
 # 🤖 Machine Learning Dashboard
 ### *Predictive Analytics & Model Insights*
-</center>
+|>
 
 <|button|label=← Home|on_action=go_home|class_name=back-btn|>
 
