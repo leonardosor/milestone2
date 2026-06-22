@@ -1,0 +1,29 @@
+# generated: 2026-05-09T17:54:46-04:00
+# last_updated: 2026-06-22T18:00:00-04:00
+project: "Census data"
+project_key: NOKEY
+tracking_system: file-system
+story_location: "_bmad-output/implementation-artifacts"
+
+development_status:
+
+  # ── Epic 1: Data Pipeline ──────────────────────────────────────────────────
+  epic-1: done
+
+  epic-1-1-convex-schema:    done        # web/convex/schema.ts + queries.ts
+  epic-1-2-export-script:    done        # scripts/export_to_convex.py; NDJSON generated (23K schools, 2686 counties, 45 states)
+  epic-1-3-data-import:      done        # convex dev ran; ed-outcomes project live at determined-mongoose-938.convex.cloud
+
+  # ── Epic 2: Next.js Frontend ───────────────────────────────────────────────
+  epic-2: in-progress
+
+  epic-2-1-app-scaffold:     done        # layout, providers, page.tsx, tsconfig, next.config, postcss all created
+  epic-2-2-us-map:           done           # US choropleth (state-level, MapLibre GL + react-map-gl)
+  epic-2-3-state-drilldown:  done           # Click state → county choropleth
+  epic-2-4-scatter-plot:     done          # Income % vs math % scatter (Recharts)
+  epic-2-5-pearson-panel:    review     # Pearson r display + methodology note
+
+  # ── Epic 3: Deploy ─────────────────────────────────────────────────────────
+  epic-3: backlog
+
+  epic-3-1-vercel-deploy:    backlog     # vercel.json + CONVEX_URL env var on Vercel
