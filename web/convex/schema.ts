@@ -1,0 +1,56 @@
+import { defineSchema, defineTable } from "convex/server";
+import { v } from "convex/values";
+
+/**
+ * EduInsight — Convex schema
+ *
+ * Three collections, all pre-computed at import time (no runtime DB queries):
+ *   districts    — one row per school (~23K)
+ *   county_stats — one row per county  (aggregated + Pearson r)
+ *   state_stats  — one row per state   (aggregated + Pearson r)
+ *
+ * Income proxy: pct_high_income = % households earning $150k+ in the school's zip
+ * Math outcome: math_pct_prof   = midpoint of proficiency band (grade 8, 2020)
+ */
+export default defineSchema({
+  // ── School-level records ──────────────────────────────────────────────────
+  districts: defineTable({
+    school_name:       v.string(),
+    ncessch:           v.optional(v.string()),   // NCES school ID
+    state:             v.optional(v.string()),   // 2-letter state code
+    county_fips:       v.optional(v.string()),   // 5-digit FIPS
+    zip:               v.optional(v.string()),
+    lat:               v.optional(v.number()),
+    lon:               v.optional(v.number()),
+    math_pct_prof:     v.optional(v.number()),   // % proficient (0–100)
+    pct_high_income:   v.optional(v.number()),   // % HH earning $150k+ (0–100)
+    pct_hhi_150k_200k: v.optional(v.number()),
+    pct_hhi_220k_plus: v.optional(v.number()),
+    enrollment:        v.optional(v.number()),
+  })
+    .index("by_state",        ["state"])
+    .index("by_county_fips",  ["county_fips"])
+    .index("by_state_county", ["state", "county_fips"]),
+
+  // ── County-level aggregates ───────────────────────────────────────────────
+  county_stats: defineTable({
+    state:                v.string(),
+    county_fips:          v.string(),
+    avg_math_pct_prof:    v.number(),
+    avg_pct_high_income:  v.number(),
+    pearson_r:            v.optional(v.number()),  // null when school_count < 3
+    school_count:         v.number(),
+  })
+    .index("by_state",      ["state"])
+    .index("by_county_fips", ["county_fips"]),
+
+  // ── State-level aggregates ────────────────────────────────────────────────
+  state_stats: defineTable({
+    state:                v.string(),
+    avg_math_pct_prof:    v.number(),
+    avg_pct_high_income:  v.number(),
+    pearson_r:            v.optional(v.number()),
+    school_count:         v.number(),
+  })
+    .index("by_state", ["state"]),
+});
