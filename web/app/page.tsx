@@ -4,7 +4,7 @@ import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import clsx from "clsx";
 import dynamic from "next/dynamic";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import PearsonPanel from "@/components/PearsonPanel";
 import { loadCountyNames } from "@/lib/usCounties";
 import { ABBR_TO_NAME } from "@/lib/usStates";
@@ -25,13 +25,62 @@ const CountyMap = dynamic(() => import("@/components/CountyMap"), {
 
 const ScatterPlot = dynamic(() => import("@/components/ScatterPlot"), {
   ssr: false,
-  loading: () => <div className="h-44 rounded-lg bg-[var(--surface)] animate-pulse" />,
+  loading: () => <div className="h-72 rounded-lg bg-[var(--surface)] animate-pulse" />,
 });
+
+/* ── Sorting helpers ── */
+type SortDir = "asc" | "desc";
+interface SortState {
+  key: string;
+  dir: SortDir;
+}
+
+function compareValues(a: unknown, b: unknown, dir: SortDir): number {
+  // Nulls always sort last, regardless of direction
+  if (a == null && b == null) return 0;
+  if (a == null) return 1;
+  if (b == null) return -1;
+  const mul = dir === "asc" ? 1 : -1;
+  if (typeof a === "string" && typeof b === "string") {
+    return mul * a.localeCompare(b);
+  }
+  return mul * ((a as number) - (b as number));
+}
+
+interface SortThProps {
+  label: string;
+  sortKey: string;
+  sort: SortState;
+  onSort: (key: string) => void;
+  align?: "left" | "right";
+}
+
+function SortTh({ label, sortKey, sort, onSort, align = "left" }: SortThProps) {
+  const active = sort.key === sortKey;
+  return (
+    <th
+      onClick={() => onSort(sortKey)}
+      className={clsx(
+        "px-4 py-2.5 cursor-pointer select-none hover:text-[var(--text)] transition-colors",
+        align === "right" ? "text-right" : "text-left",
+        active && "text-[var(--text)]"
+      )}
+      title={`Sort by ${label}`}
+    >
+      {label}
+      <span className="inline-block w-4 text-[var(--accent)]">
+        {active ? (sort.dir === "desc" ? " ▼" : " ▲") : ""}
+      </span>
+    </th>
+  );
+}
 
 export default function Home() {
   const [selectedState, setSelectedState] = useState<string | null>(null);
   const [selectedCounty, setSelectedCounty] = useState<string | null>(null);
   const [countyNames, setCountyNames] = useState<Map<string, string>>(new Map());
+  const [highlightSchool, setHighlightSchool] = useState<string | null>(null);
+  const highlightRowRef = useRef<HTMLTableRowElement | null>(null);
   const states = useQuery(api.queries.listStates);
   const counties = useQuery(
     api.queries.listCountiesByState,
@@ -47,6 +96,25 @@ export default function Home() {
     api.queries.listDistrictsByState,
     selectedState && !selectedCounty ? { state: selectedState } : 'skip'
   );
+
+  // Table sort state (shared slot; reset whenever drill level changes)
+  const [sort, setSort] = useState<SortState>({ key: "math", dir: "desc" });
+  const defaultDirs: Record<string, SortDir> = {
+    name: "asc",
+    schools: "desc",
+    enrollment: "desc",
+    math: "desc",
+    income: "desc",
+    pearson: "desc",
+  };
+  const handleSort = useCallback((key: string) => {
+    setSort(prev =>
+      prev.key === key
+        ? { key, dir: prev.dir === "desc" ? "asc" : "desc" }
+        : { key, dir: defaultDirs[key] ?? "desc" }
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Patch 5: stable ref — prevents CountyMap useEffect from re-firing on every Convex tick
   const countyStatsMemo = useMemo(() => counties ?? [], [counties]);
@@ -114,6 +182,70 @@ export default function Home() {
     loadCountyNames(selectedState).then(setCountyNames).catch(() => {});
   }, [selectedState]);
 
+  // Reset sort + highlight when drill level changes
+  useEffect(() => {
+    setSort({ key: "math", dir: "desc" });
+    setHighlightSchool(null);
+  }, [selectedState, selectedCounty]);
+
+  // Scroll the highlighted school row into view, then let the flash fade
+  useEffect(() => {
+    if (!highlightSchool) return;
+    highlightRowRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    const t = setTimeout(() => setHighlightSchool(null), 3000);
+    return () => clearTimeout(t);
+  }, [highlightSchool]);
+
+  // Drill-through from scatter chart:
+  //  • national view → point = a state → select it
+  //  • county view   → point = a school → highlight its row in the table
+  const handleScatterClick = useCallback(
+    (name: string) => {
+      if (!selectedState) {
+        setSelectedState(name);
+      } else if (selectedCounty) {
+        setHighlightSchool(name);
+      }
+    },
+    [selectedState, selectedCounty]
+  );
+
+  /* ── Sorted table rows ── */
+  const sortedSchools = useMemo(() => {
+    const acc: Record<string, (s: NonNullable<typeof schools>[number]) => unknown> = {
+      name: s => s.school_name,
+      enrollment: s => s.enrollment,
+      math: s => s.math_pct_prof,
+      income: s => s.pct_high_income,
+    };
+    const get = acc[sort.key] ?? acc.math;
+    return (schools ?? []).slice().sort((a, b) => compareValues(get(a), get(b), sort.dir));
+  }, [schools, sort]);
+
+  const sortedCounties = useMemo(() => {
+    const acc: Record<string, (c: NonNullable<typeof counties>[number]) => unknown> = {
+      name: c => countyNames.get(c.county_fips) ?? c.county_fips,
+      schools: c => c.school_count,
+      math: c => c.avg_math_pct_prof,
+      income: c => c.avg_pct_high_income,
+      pearson: c => c.pearson_r,
+    };
+    const get = acc[sort.key] ?? acc.math;
+    return (counties ?? []).slice().sort((a, b) => compareValues(get(a), get(b), sort.dir));
+  }, [counties, sort, countyNames]);
+
+  const sortedStates = useMemo(() => {
+    const acc: Record<string, (s: NonNullable<typeof states>[number]) => unknown> = {
+      name: s => ABBR_TO_NAME[s.state] ?? s.state,
+      schools: s => s.school_count,
+      math: s => s.avg_math_pct_prof,
+      income: s => s.avg_pct_high_income,
+      pearson: s => s.pearson_r,
+    };
+    const get = acc[sort.key] ?? acc.math;
+    return (states ?? []).slice().sort((a, b) => compareValues(get(a), get(b), sort.dir));
+  }, [states, sort]);
+
   const loaded = states !== undefined;
   const count = states?.length ?? 0;
   const totalSchools = states?.reduce((sum, s) => sum + s.school_count, 0) ?? 0;
@@ -121,11 +253,11 @@ export default function Home() {
   return (
     <div className="p-6 space-y-8">
       {/* ── Hero ── */}
-      <section className="max-w-2xl space-y-2">
-        <h1 className="text-3xl font-bold">
+      <section className="max-w-3xl space-y-2">
+        <h1 className="text-4xl font-bold">
           Does income predict math scores?
         </h1>
-        <p className="text-[var(--muted)] leading-relaxed">
+        <p className="text-[var(--muted)] text-lg leading-relaxed">
           This dashboard maps the correlation between household wealth and
           grade-8 math proficiency across {loaded ? `${totalSchools.toLocaleString()} US schools` : "US schools"}
           {" "}in {loaded ? count : '…'} states. Select a state to explore counties; select a county
@@ -155,7 +287,7 @@ export default function Home() {
           : `Live · ${count} states loaded`}
       </div>
 
-      {/* ── Placeholder panels ── */}
+      {/* ── Map + side panels ── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {loaded && count > 0 ? (
           <div className="lg:col-span-2 h-96">
@@ -193,7 +325,18 @@ export default function Home() {
             loading={scatterLoading}
             xLabel={selectedState ? 'Income %' : 'Avg Income %'}
             yLabel={selectedState ? 'Math %' : 'Avg Math %'}
+            onPointClick={handleScatterClick}
           />
+          {!selectedState && (
+            <p className="text-sm text-[var(--muted)]">
+              Tip: click a dot to drill into that state.
+            </p>
+          )}
+          {selectedState && selectedCounty && (
+            <p className="text-sm text-[var(--muted)]">
+              Tip: click a dot to find that school in the table.
+            </p>
+          )}
         </div>
       </div>
 
@@ -206,25 +349,25 @@ export default function Home() {
               <div className="flex items-center gap-3">
                 <button
                   onClick={() => setSelectedCounty(null)}
-                  className="text-sm text-[var(--accent)] hover:underline"
+                  className="text-base text-[var(--accent)] hover:underline"
                 >
                   ← {ABBR_TO_NAME[selectedState] ?? selectedState}
                 </button>
-                <h2 className="text-lg font-semibold">
+                <h2 className="text-xl font-semibold">
                   {countyNames.get(selectedCounty) ?? selectedCounty}
-                  <span className="text-base font-normal text-[var(--muted)]">
+                  <span className="text-lg font-normal text-[var(--muted)]">
                     {' '}— Schools · Gr. 8 Math Proficiency
                   </span>
                 </h2>
               </div>
               <div className="overflow-x-auto rounded-lg border border-[var(--border)]">
-                <table className="w-full text-sm">
+                <table className="w-full text-base">
                   <thead>
-                    <tr className="bg-[var(--surface)] text-[var(--muted)] text-left">
-                      <th className="px-4 py-2">School</th>
-                      <th className="px-4 py-2 text-right">Enrollment</th>
-                      <th className="px-4 py-2 text-right">Math Prof. %</th>
-                      <th className="px-4 py-2 text-right">High Income %</th>
+                    <tr className="bg-[var(--surface)] text-[var(--muted)]">
+                      <SortTh label="School" sortKey="name" sort={sort} onSort={handleSort} />
+                      <SortTh label="Enrollment" sortKey="enrollment" sort={sort} onSort={handleSort} align="right" />
+                      <SortTh label="Math Prof. %" sortKey="math" sort={sort} onSort={handleSort} align="right" />
+                      <SortTh label="High Income %" sortKey="income" sort={sort} onSort={handleSort} align="right" />
                     </tr>
                   </thead>
                   <tbody>
@@ -234,26 +377,30 @@ export default function Home() {
                           Loading…
                         </td>
                       </tr>
-                    ) : (schools ?? [])
-                      .slice()
-                      .sort((a, b) => (b.math_pct_prof ?? 0) - (a.math_pct_prof ?? 0))
-                      .map((s) => (
-                        <tr
-                          key={s._id}
-                          className="border-t border-[var(--border)] hover:bg-[var(--surface)] transition-colors"
-                        >
-                          <td className="px-4 py-2">{s.school_name}</td>
-                          <td className="px-4 py-2 text-right">
-                            {s.enrollment != null ? s.enrollment.toLocaleString() : '—'}
-                          </td>
-                          <td className="px-4 py-2 text-right">
-                            {s.math_pct_prof != null ? `${s.math_pct_prof.toFixed(1)}%` : '—'}
-                          </td>
-                          <td className="px-4 py-2 text-right">
-                            {s.pct_high_income != null ? `${s.pct_high_income.toFixed(1)}%` : '—'}
-                          </td>
-                        </tr>
-                      ))}
+                    ) : sortedSchools.map((s) => {
+                        const isHighlighted = highlightSchool === s.school_name;
+                        return (
+                          <tr
+                            key={s._id}
+                            ref={isHighlighted ? highlightRowRef : undefined}
+                            className={clsx(
+                              "border-t border-[var(--border)] hover:bg-[var(--surface)] transition-colors duration-500",
+                              isHighlighted && "bg-[var(--accent)]/25"
+                            )}
+                          >
+                            <td className="px-4 py-2.5">{s.school_name}</td>
+                            <td className="px-4 py-2.5 text-right">
+                              {s.enrollment != null ? s.enrollment.toLocaleString() : '—'}
+                            </td>
+                            <td className="px-4 py-2.5 text-right">
+                              {s.math_pct_prof != null ? `${s.math_pct_prof.toFixed(1)}%` : '—'}
+                            </td>
+                            <td className="px-4 py-2.5 text-right">
+                              {s.pct_high_income != null ? `${s.pct_high_income.toFixed(1)}%` : '—'}
+                            </td>
+                          </tr>
+                        );
+                      })}
                   </tbody>
                 </table>
               </div>
@@ -261,51 +408,48 @@ export default function Home() {
           ) : selectedState ? (
             /* ── Level 2: Counties for selected state ── */
             <>
-              <h2 className="text-lg font-semibold">
+              <h2 className="text-xl font-semibold">
                 Counties in {ABBR_TO_NAME[selectedState] ?? selectedState}
-                <span className="text-base font-normal text-[var(--muted)]">
+                <span className="text-lg font-normal text-[var(--muted)]">
                   {' '}— Gr. 8 Math Proficiency · click a county for schools
                 </span>
               </h2>
               <div className="overflow-x-auto rounded-lg border border-[var(--border)]">
-                <table className="w-full text-sm">
+                <table className="w-full text-base">
                   <thead>
-                    <tr className="bg-[var(--surface)] text-[var(--muted)] text-left">
-                      <th className="px-4 py-2">County</th>
-                      <th className="px-4 py-2 text-right">Schools</th>
-                      <th className="px-4 py-2 text-right">Math Prof. %</th>
-                      <th className="px-4 py-2 text-right">High Income %</th>
-                      <th className="px-4 py-2 text-right">Pearson r</th>
+                    <tr className="bg-[var(--surface)] text-[var(--muted)]">
+                      <SortTh label="County" sortKey="name" sort={sort} onSort={handleSort} />
+                      <SortTh label="Schools" sortKey="schools" sort={sort} onSort={handleSort} align="right" />
+                      <SortTh label="Math Prof. %" sortKey="math" sort={sort} onSort={handleSort} align="right" />
+                      <SortTh label="High Income %" sortKey="income" sort={sort} onSort={handleSort} align="right" />
+                      <SortTh label="Pearson r" sortKey="pearson" sort={sort} onSort={handleSort} align="right" />
                     </tr>
                   </thead>
                   <tbody>
-                    {(counties ?? [])
-                      .slice()
-                      .sort((a, b) => (b.avg_math_pct_prof ?? 0) - (a.avg_math_pct_prof ?? 0))
-                      .map((c) => (
-                        <tr
-                          key={c.county_fips}
-                          onClick={() => setSelectedCounty(c.county_fips)}
-                          className="border-t border-[var(--border)] hover:bg-[var(--surface)] transition-colors cursor-pointer"
+                    {sortedCounties.map((c) => (
+                      <tr
+                        key={c.county_fips}
+                        onClick={() => setSelectedCounty(c.county_fips)}
+                        className="border-t border-[var(--border)] hover:bg-[var(--surface)] transition-colors cursor-pointer"
+                      >
+                        <td className="px-4 py-2.5">
+                          {countyNames.get(c.county_fips) ?? c.county_fips}
+                        </td>
+                        <td className="px-4 py-2.5 text-right">{c.school_count.toLocaleString()}</td>
+                        <td className="px-4 py-2.5 text-right">{c.avg_math_pct_prof != null ? `${c.avg_math_pct_prof.toFixed(1)}%` : '—'}</td>
+                        <td className="px-4 py-2.5 text-right">{c.avg_pct_high_income != null ? `${c.avg_pct_high_income.toFixed(1)}%` : '—'}</td>
+                        <td
+                          className={clsx(
+                            "px-4 py-2.5 text-right font-mono",
+                            c.pearson_r != null && c.pearson_r > 0.3
+                              ? "text-green-400"
+                              : "text-[var(--muted)]"
+                          )}
                         >
-                          <td className="px-4 py-2">
-                            {countyNames.get(c.county_fips) ?? c.county_fips}
-                          </td>
-                          <td className="px-4 py-2 text-right">{c.school_count.toLocaleString()}</td>
-                          <td className="px-4 py-2 text-right">{c.avg_math_pct_prof != null ? `${c.avg_math_pct_prof.toFixed(1)}%` : '—'}</td>
-                          <td className="px-4 py-2 text-right">{c.avg_pct_high_income != null ? `${c.avg_pct_high_income.toFixed(1)}%` : '—'}</td>
-                          <td
-                            className={clsx(
-                              "px-4 py-2 text-right font-mono",
-                              c.pearson_r != null && c.pearson_r > 0.3
-                                ? "text-green-400"
-                                : "text-[var(--muted)]"
-                            )}
-                          >
-                            {c.pearson_r != null ? c.pearson_r.toFixed(3) : "—"}
-                          </td>
-                        </tr>
-                      ))}
+                          {c.pearson_r != null ? c.pearson_r.toFixed(3) : "—"}
+                        </td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               </div>
@@ -313,36 +457,36 @@ export default function Home() {
           ) : (
             /* ── Level 1: All states ── */
             <>
-              <h2 className="text-lg font-semibold">State Summaries
-                <span className="text-base font-normal text-[var(--muted)]">
+              <h2 className="text-xl font-semibold">State Summaries
+                <span className="text-lg font-normal text-[var(--muted)]">
                   {' '}— click a state to drill down
                 </span>
               </h2>
               <div className="overflow-x-auto rounded-lg border border-[var(--border)]">
-                <table className="w-full text-sm">
+                <table className="w-full text-base">
                   <thead>
-                    <tr className="bg-[var(--surface)] text-[var(--muted)] text-left">
-                      <th className="px-4 py-2">State</th>
-                      <th className="px-4 py-2 text-right">Schools</th>
-                      <th className="px-4 py-2 text-right">Math Prof. %</th>
-                      <th className="px-4 py-2 text-right">High Income %</th>
-                      <th className="px-4 py-2 text-right">Pearson r</th>
+                    <tr className="bg-[var(--surface)] text-[var(--muted)]">
+                      <SortTh label="State" sortKey="name" sort={sort} onSort={handleSort} />
+                      <SortTh label="Schools" sortKey="schools" sort={sort} onSort={handleSort} align="right" />
+                      <SortTh label="Math Prof. %" sortKey="math" sort={sort} onSort={handleSort} align="right" />
+                      <SortTh label="High Income %" sortKey="income" sort={sort} onSort={handleSort} align="right" />
+                      <SortTh label="Pearson r" sortKey="pearson" sort={sort} onSort={handleSort} align="right" />
                     </tr>
                   </thead>
                   <tbody>
-                    {states.map((s) => (
+                    {sortedStates.map((s) => (
                       <tr
                         key={s.state}
                         onClick={() => setSelectedState(s.state)}
                         className="border-t border-[var(--border)] hover:bg-[var(--surface)] transition-colors cursor-pointer"
                       >
-                        <td className="px-4 py-2 font-semibold">{ABBR_TO_NAME[s.state] ?? s.state}</td>
-                        <td className="px-4 py-2 text-right">{s.school_count.toLocaleString()}</td>
-                        <td className="px-4 py-2 text-right">{s.avg_math_pct_prof != null ? `${s.avg_math_pct_prof.toFixed(1)}%` : '—'}</td>
-                        <td className="px-4 py-2 text-right">{s.avg_pct_high_income != null ? `${s.avg_pct_high_income.toFixed(1)}%` : '—'}</td>
+                        <td className="px-4 py-2.5 font-semibold">{ABBR_TO_NAME[s.state] ?? s.state}</td>
+                        <td className="px-4 py-2.5 text-right">{s.school_count.toLocaleString()}</td>
+                        <td className="px-4 py-2.5 text-right">{s.avg_math_pct_prof != null ? `${s.avg_math_pct_prof.toFixed(1)}%` : '—'}</td>
+                        <td className="px-4 py-2.5 text-right">{s.avg_pct_high_income != null ? `${s.avg_pct_high_income.toFixed(1)}%` : '—'}</td>
                         <td
                           className={clsx(
-                            "px-4 py-2 text-right font-mono",
+                            "px-4 py-2.5 text-right font-mono",
                             s.pearson_r != null && s.pearson_r > 0.3
                               ? "text-green-400"
                               : "text-[var(--muted)]"

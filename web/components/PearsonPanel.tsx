@@ -34,7 +34,7 @@ export default function PearsonPanel({
           </span>
         ) : (
           <>
-            <span className={clsx('text-2xl font-bold font-mono', rColor)}>
+            <span className={clsx('text-3xl font-bold font-mono', rColor)}>
               {rDisplay}
             </span>
             {pearsonR === null && (
