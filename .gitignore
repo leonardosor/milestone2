@@ -65,3 +65,9 @@ dbt_project/target/
 app/.streamlit/secrets.toml
 
 *.md
+
+# convex data exports
+scripts/**/convex_export/
+
+# convex data exports
+scripts/**/convex_export/
