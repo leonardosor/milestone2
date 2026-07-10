@@ -28,6 +28,11 @@ const ScatterPlot = dynamic(() => import("@/components/ScatterPlot"), {
   loading: () => <div className="h-72 rounded-lg bg-[var(--surface)] animate-pulse" />,
 });
 
+const IncomeBracketChart = dynamic(() => import("@/components/IncomeBracketChart"), {
+  ssr: false,
+  loading: () => <div className="h-80 rounded-lg bg-[var(--surface)] animate-pulse" />,
+});
+
 /* ── Sorting helpers ── */
 type SortDir = "asc" | "desc";
 interface SortState {
@@ -339,6 +344,34 @@ export default function Home() {
           )}
         </div>
       </div>
+
+      {/* ── Proficiency vs income brackets (100% stacked, quintile PDF-based) ── */}
+      {loaded && count > 0 && (
+        <section className="space-y-3">
+          <h2 className="text-xl font-semibold">
+            Proficiency by Income Bracket
+            <span className="text-lg font-normal text-[var(--muted)]">
+              {' '}— {selectedState && selectedCounty
+                ? `schools in ${countyNames.get(selectedCounty) ?? selectedCounty}`
+                : selectedState
+                ? `districts in ${ABBR_TO_NAME[selectedState] ?? selectedState}`
+                : 'state averages, US'}
+              {' '}· brackets are income quintiles
+            </span>
+          </h2>
+          <IncomeBracketChart
+            data={scatterData}
+            loading={scatterLoading}
+            unitLabel={
+              selectedState && selectedCounty
+                ? 'schools'
+                : selectedState
+                ? 'districts'
+                : 'states'
+            }
+          />
+        </section>
+      )}
 
       {/* ── Dynamic table: schools → counties → states based on selection ── */}
       {loaded && count > 0 && (
