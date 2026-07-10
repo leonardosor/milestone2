@@ -3,7 +3,7 @@ import "./globals.css";
 import { Providers } from "./providers";
 
 export const metadata: Metadata = {
-  title: "EduInsight — Income & Math Outcomes",
+  title: "Educational Insights — Income & Math Outcomes",
   description:
     "Exploring the correlation between household income and grade-8 math proficiency across US schools.",
 };
@@ -18,7 +18,7 @@ export default function RootLayout({
       <body>
         <Providers>
           <header className="border-b border-[var(--border)] px-6 py-4 flex items-center gap-3">
-            <span className="text-xl font-bold tracking-tight">EduInsight</span>
+            <span className="text-xl font-bold tracking-tight">Educational Insights</span>
             <span className="text-[var(--muted)] text-sm">
               Income &amp; Math Outcomes · US Grade-8 Schools · 2020–21
             </span>
