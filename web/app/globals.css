@@ -9,6 +9,11 @@
   --accent: #3b82f6;
 }
 
+html {
+  /* Larger base size: all rem-based Tailwind sizes scale up from this */
+  font-size: 18px;
+}
+
 body {
   background-color: var(--bg);
   color: var(--text);
