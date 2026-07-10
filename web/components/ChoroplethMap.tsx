@@ -65,10 +65,14 @@ export default function ChoroplethMap({ stateStats, onStateSelect }: ChoroplethM
   const [fetchError, setFetchError] = useState<string | null>(null);
 
   useEffect(() => {
+    // Cancellation guard: if stateStats changes (or we unmount) before the
+    // fetch resolves, ignore the stale result so it can't clobber newer state.
+    let cancelled = false;
     setFetchError(null);
     fetchUSStateFeatures(stateStats)
-      .then(setGeojson)
-      .catch((err: Error) => setFetchError(err.message));
+      .then(fc => { if (!cancelled) setGeojson(fc); })
+      .catch((err: Error) => { if (!cancelled) setFetchError(err.message); });
+    return () => { cancelled = true; };
   }, [stateStats]);
 
   const onMouseMove = useCallback((e: MapMouseEvent) => {

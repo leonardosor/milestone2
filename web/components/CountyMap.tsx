@@ -69,14 +69,20 @@ export default function CountyMap({ stateAbbr, countyStats, onBack, onCountySele
   const [fetchError, setFetchError] = useState<string | null>(null);
 
   useEffect(() => {
+    // Cancellation guard: rapid state switches can resolve out of order;
+    // ignore stale results so an older state's counties can't overwrite
+    // the currently selected state's map.
+    let cancelled = false;
     setFetchError(null);
     setGeojson(null);
     fetchCountyFeatures(stateAbbr, countyStats)
       .then(fc => {
+        if (cancelled) return;
         setGeojson(fc);
         setBounds(getStateBounds(fc.features));
       })
-      .catch((err: Error) => setFetchError(err.message));
+      .catch((err: Error) => { if (!cancelled) setFetchError(err.message); });
+    return () => { cancelled = true; };
   }, [stateAbbr, countyStats]);
 
   const onMouseMove = useCallback((e: MapMouseEvent) => {

@@ -9,12 +9,27 @@ import { v } from "convex/values";
 
 // ── State list (for the map selector) ────────────────────────────────────────
 
-/** Return all state_stats rows, sorted by state code. */
+/**
+ * Return all state_stats rows, sorted by state code.
+ *
+ * Dedup guard (td-state-stats-dupes): the table has no uniqueness constraint
+ * on `state`, so a re-import without `--replace` can append duplicate rows.
+ * Latest-wins by _creationTime so a stale duplicate never shadows fresh data.
+ */
 export const listStates = query({
   args: {},
   handler: async (ctx) => {
     const rows = await ctx.db.query("state_stats").collect();
-    return rows.sort((a, b) => (a.state ?? "").localeCompare(b.state ?? ""));
+    const byState = new Map<string, (typeof rows)[number]>();
+    for (const row of rows) {
+      const prev = byState.get(row.state);
+      if (!prev || row._creationTime > prev._creationTime) {
+        byState.set(row.state, row);
+      }
+    }
+    return [...byState.values()].sort((a, b) =>
+      (a.state ?? "").localeCompare(b.state ?? "")
+    );
   },
 });
 
@@ -67,7 +82,7 @@ export const listDistrictsByState = query({
 
 // ── Single-record lookups ─────────────────────────────────────────────────────
 
-/** Return state_stats for one state. */
+/** Return state_stats for one state (latest row wins if duplicates exist). */
 export const getStateStats = query({
   args: { state: v.string() },
   handler: async (ctx, { state }) => {
@@ -75,7 +90,10 @@ export const getStateStats = query({
       .query("state_stats")
       .withIndex("by_state", (q) => q.eq("state", state))
       .collect();
-    return rows[0] ?? null;
+    if (rows.length === 0) return null;
+    return rows.reduce((latest, row) =>
+      row._creationTime > latest._creationTime ? row : latest
+    );
   },
 });
 

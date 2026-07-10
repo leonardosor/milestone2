@@ -1,5 +1,5 @@
 # generated: 2026-05-09T17:54:46-04:00
-# last_updated: 2026-06-22T18:00:00-04:00
+# last_updated: 2026-07-10T00:00:00-04:00
 project: "Census data"
 project_key: NOKEY
 tracking_system: file-system
@@ -15,15 +15,21 @@ development_status:
   epic-1-3-data-import:      done        # convex dev ran; ed-outcomes project live at determined-mongoose-938.convex.cloud
 
   # ── Epic 2: Next.js Frontend ───────────────────────────────────────────────
-  epic-2: in-progress
+  epic-2: done          # all stories built + wired into web/app/page.tsx
 
   epic-2-1-app-scaffold:     done        # layout, providers, page.tsx, tsconfig, next.config, postcss all created
-  epic-2-2-us-map:           done           # US choropleth (state-level, MapLibre GL + react-map-gl)
-  epic-2-3-state-drilldown:  done           # Click state → county choropleth
-  epic-2-4-scatter-plot:     done          # Income % vs math % scatter (Recharts)
-  epic-2-5-pearson-panel:    review     # Pearson r display + methodology note
+  epic-2-2-us-map:           done        # US choropleth (state-level, MapLibre GL + react-map-gl)
+  epic-2-3-state-drilldown:  done        # Click state → county choropleth (CountyMap.tsx)
+  epic-2-4-scatter-plot:     done        # Income % vs math % scatter (Recharts) — ScatterPlot.tsx wired in page.tsx
+  epic-2-5-pearson-panel:    done        # Pearson r display + methodology note — PearsonPanel.tsx wired in page.tsx
 
   # ── Epic 3: Deploy ─────────────────────────────────────────────────────────
-  epic-3: backlog
+  epic-3: in-progress   # frontend feature-complete; production deploy NOT done
 
-  epic-3-1-vercel-deploy:    backlog     # vercel.json + CONVEX_URL env var on Vercel
+  epic-3-1-vercel-deploy:    in-progress  # vercel.json exists ({"rootDirectory":"web"}) but repo not connected to Vercel + env vars not set (NEXT_PUBLIC_CONVEX_URL, NEXT_PUBLIC_CONVEX_SITE_URL, CONVEX_DEPLOY_KEY)
+  epic-3-2-convex-prod:      backlog      # still on `convex dev` deployment (determined-mongoose-938); need `npx convex deploy` to prod + re-import NDJSON (districts/county_stats/state_stats)
+  epic-3-3-verify-deploy:    in-progress  # `npm run build` + `tsc --noEmit` verified clean 2026-07-10; smoke-test of deployed URL still pending
+
+  # ── Tech debt (deferred from code review — see deferred-work.md) ────────────
+  td-abortcontroller-maps:   done         # cancellation guard added to fetch effects in ChoroplethMap.tsx + CountyMap.tsx; county topo cache now caches in-flight promise
+  td-state-stats-dupes:      done         # latest-wins dedup by _creationTime in listStates + getStateStats (convex/queries.ts)

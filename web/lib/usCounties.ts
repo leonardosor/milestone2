@@ -28,14 +28,20 @@ export interface CountyData {
 const COUNTIES_URL = 'https://cdn.jsdelivr.net/npm/us-atlas@3/counties-10m.json';
 
 // Patch 2: module-level cache so fetchCountyFeatures + loadCountyNames share one fetch
-let cachedTopo: any = null;
+let cachedTopoPromise: Promise<any> | null = null;
 async function getCountyTopo() {
-  if (!cachedTopo) {
-    const resp = await fetch(COUNTIES_URL);
-    if (!resp.ok) throw new Error(`Failed to load county atlas: ${resp.status}`);
-    cachedTopo = await resp.json();
+  if (!cachedTopoPromise) {
+    cachedTopoPromise = fetch(COUNTIES_URL)
+      .then(resp => {
+        if (!resp.ok) throw new Error(`Failed to load county atlas: ${resp.status}`);
+        return resp.json();
+      })
+      .catch(err => {
+        cachedTopoPromise = null; // don't cache failures
+        throw err;
+      });
   }
-  return cachedTopo;
+  return cachedTopoPromise;
 }
 
 export async function fetchCountyFeatures(
