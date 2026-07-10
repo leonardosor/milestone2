@@ -161,7 +161,7 @@ export default function IncomeBracketChart({
             tick={{ fill: 'var(--muted)', fontSize: 13 }}
           />
           <Tooltip
-            cursor={{ fill: 'rgba(255,255,255,0.04)' }}
+            cursor={{ fill: 'rgba(0,0,0,0.04)' }}
             content={<CustomTooltip unitLabel={unitLabel} />}
           />
           <Legend

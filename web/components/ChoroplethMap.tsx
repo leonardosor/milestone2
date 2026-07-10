@@ -18,7 +18,7 @@ const statesFillLayer: LayerProps = {
     'fill-color': [
       'step',
       ['coalesce', ['get', 'avg_math_pct_prof'], -1],
-      '#2a2d3a',
+      '#dde2ea',
       0,  '#0d0887',
       25, '#6a00a8',
       35, '#b12a90',
@@ -34,13 +34,13 @@ const statesBorderLayer: LayerProps = {
   id: 'states-border',
   type: 'line',
   paint: {
-    'line-color': '#0f1117',
+    'line-color': '#ffffff',
     'line-width': 0.8,
   },
 };
 
 const LEGEND = [
-  { color: '#2a2d3a', label: 'No data' },
+  { color: '#dde2ea', label: 'No data' },
   { color: '#0d0887', label: '< 25%' },
   { color: '#6a00a8', label: '25–35%' },
   { color: '#b12a90', label: '35–45%' },
@@ -114,7 +114,7 @@ export default function ChoroplethMap({ stateStats, onStateSelect }: ChoroplethM
     <div className="relative w-full h-full">
       <Map
         initialViewState={{ latitude: 38, longitude: -96, zoom: 3 }}
-        mapStyle="https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json"
+        mapStyle="https://basemaps.cartocdn.com/gl/positron-gl-style/style.json"
         interactiveLayerIds={['states-fill']}
         onMouseMove={onMouseMove}
         onMouseLeave={onMouseLeave}
@@ -149,7 +149,7 @@ export default function ChoroplethMap({ stateStats, onStateSelect }: ChoroplethM
 
       {/* Legend */}
       <div className="absolute bottom-4 left-4 z-10 bg-[var(--surface)] border border-[var(--border)] rounded px-3 py-2 space-y-1">
-        <div className="text-xs font-semibold text-[var(--foreground)] mb-1">Gr. 8 Math Proficiency</div>
+        <div className="text-xs font-semibold text-[var(--text)] mb-1">Gr. 8 Math Proficiency</div>
         {LEGEND.map(({ color, label }) => (
           <div key={label} className="flex items-center gap-2 text-xs text-[var(--muted)]">
             <span className="w-3 h-3 rounded-sm flex-shrink-0" style={{ backgroundColor: color }} />

@@ -23,7 +23,7 @@ export default function PearsonPanel({
 
   const rDisplay = pearsonR != null ? pearsonR.toFixed(3) : '—';
   const rColor =
-    pearsonR != null && pearsonR > 0.3 ? 'text-green-400' : 'text-[var(--muted)]';
+    pearsonR != null && pearsonR > 0.3 ? 'text-green-600' : 'text-[var(--muted)]';
 
   return (
     <div className="h-44 rounded-lg bg-[var(--surface)] border border-[var(--border)] p-4 flex flex-col justify-between">

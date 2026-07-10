@@ -275,14 +275,14 @@ export default function Home() {
         className={clsx(
           "inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-sm border",
           loaded && count > 0
-            ? "border-green-800 bg-green-950 text-green-400"
-            : "border-yellow-800 bg-yellow-950 text-yellow-400"
+            ? "border-green-300 bg-green-50 text-green-700"
+            : "border-yellow-300 bg-yellow-50 text-yellow-700"
         )}
       >
         <span
           className={clsx(
             "w-2 h-2 rounded-full",
-            loaded && count > 0 ? "bg-green-400" : "bg-yellow-400"
+            loaded && count > 0 ? "bg-green-500" : "bg-yellow-500"
           )}
         />
         {!loaded
@@ -306,6 +306,9 @@ export default function Home() {
                   countyStats={countyStatsMemo}
                   onBack={() => { setSelectedState(null); setSelectedCounty(null); }}
                   onCountySelect={setSelectedCounty}
+                  selectedCounty={selectedCounty}
+                  schools={selectedCounty ? schools ?? [] : []}
+                  onSchoolSelect={setHighlightSchool}
                 />
               )
             ) : (
@@ -417,7 +420,7 @@ export default function Home() {
                             key={s._id}
                             ref={isHighlighted ? highlightRowRef : undefined}
                             className={clsx(
-                              "border-t border-[var(--border)] hover:bg-[var(--surface)] transition-colors duration-500",
+                              "border-t border-[var(--border)] hover:bg-[var(--row-hover)] transition-colors duration-500",
                               isHighlighted && "bg-[var(--accent)]/25"
                             )}
                           >
@@ -463,7 +466,7 @@ export default function Home() {
                       <tr
                         key={c.county_fips}
                         onClick={() => setSelectedCounty(c.county_fips)}
-                        className="border-t border-[var(--border)] hover:bg-[var(--surface)] transition-colors cursor-pointer"
+                        className="border-t border-[var(--border)] hover:bg-[var(--row-hover)] transition-colors cursor-pointer"
                       >
                         <td className="px-4 py-2.5">
                           {countyNames.get(c.county_fips) ?? c.county_fips}
@@ -475,7 +478,7 @@ export default function Home() {
                           className={clsx(
                             "px-4 py-2.5 text-right font-mono",
                             c.pearson_r != null && c.pearson_r > 0.3
-                              ? "text-green-400"
+                              ? "text-green-600"
                               : "text-[var(--muted)]"
                           )}
                         >
@@ -511,7 +514,7 @@ export default function Home() {
                       <tr
                         key={s.state}
                         onClick={() => setSelectedState(s.state)}
-                        className="border-t border-[var(--border)] hover:bg-[var(--surface)] transition-colors cursor-pointer"
+                        className="border-t border-[var(--border)] hover:bg-[var(--row-hover)] transition-colors cursor-pointer"
                       >
                         <td className="px-4 py-2.5 font-semibold">{ABBR_TO_NAME[s.state] ?? s.state}</td>
                         <td className="px-4 py-2.5 text-right">{s.school_count.toLocaleString()}</td>
@@ -521,7 +524,7 @@ export default function Home() {
                           className={clsx(
                             "px-4 py-2.5 text-right font-mono",
                             s.pearson_r != null && s.pearson_r > 0.3
-                              ? "text-green-400"
+                              ? "text-green-600"
                               : "text-[var(--muted)]"
                           )}
                         >
