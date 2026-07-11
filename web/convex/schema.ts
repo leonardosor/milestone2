@@ -44,6 +44,16 @@ export default defineSchema({
     .index("by_state",      ["state"])
     .index("by_county_fips", ["county_fips"]),
 
+  // ── LLM usage tracking (AI insights cost controls) ───────────────────────
+  llm_usage: defineTable({
+    day:        v.string(),   // UTC date "YYYY-MM-DD"
+    session_id: v.string(),   // client-generated per browser session
+    tokens:     v.number(),   // input + output tokens consumed
+    cost_usd:   v.number(),   // estimated spend
+  })
+    .index("by_day",         ["day"])
+    .index("by_day_session", ["day", "session_id"]),
+
   // ── State-level aggregates ────────────────────────────────────────────────
   state_stats: defineTable({
     state:                v.string(),

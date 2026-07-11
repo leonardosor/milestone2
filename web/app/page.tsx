@@ -6,6 +6,7 @@ import clsx from "clsx";
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import PearsonPanel from "@/components/PearsonPanel";
+import InsightsPanel, { type InsightsContext } from "@/components/InsightsPanel";
 import { loadCountyNames } from "@/lib/usCounties";
 import { ABBR_TO_NAME } from "@/lib/usStates";
 
@@ -32,6 +33,33 @@ const IncomeBracketChart = dynamic(() => import("@/components/IncomeBracketChart
   ssr: false,
   loading: () => <div className="h-80 rounded-lg bg-[var(--surface)] animate-pulse" />,
 });
+
+/* ── Stats helpers (for the AI insights context) ── */
+function mean(v: number[]): number | null {
+  return v.length ? +(v.reduce((a, b) => a + b, 0) / v.length).toFixed(2) : null;
+}
+
+function median(v: number[]): number | null {
+  if (!v.length) return null;
+  const s = [...v].sort((a, b) => a - b);
+  const m = Math.floor(s.length / 2);
+  return +(s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2).toFixed(2);
+}
+
+function pearsonR(pts: { x: number; y: number }[]): number | null {
+  if (pts.length < 3) return null;
+  const n = pts.length;
+  const mx = pts.reduce((a, p) => a + p.x, 0) / n;
+  const my = pts.reduce((a, p) => a + p.y, 0) / n;
+  let sxy = 0, sxx = 0, syy = 0;
+  for (const p of pts) {
+    sxy += (p.x - mx) * (p.y - my);
+    sxx += (p.x - mx) ** 2;
+    syy += (p.y - my) ** 2;
+  }
+  if (sxx === 0 || syy === 0) return null;
+  return +(sxy / Math.sqrt(sxx * syy)).toFixed(3);
+}
 
 /* ── Sorting helpers ── */
 type SortDir = "asc" | "desc";
@@ -251,6 +279,67 @@ export default function Home() {
     return (states ?? []).slice().sort((a, b) => compareValues(get(a), get(b), sort.dir));
   }, [states, sort]);
 
+  /* ── AI insights context: snapshot of the on-screen data + derived stats ── */
+  const insightsLevel = selectedState && selectedCounty ? 'county' : selectedState ? 'state' : 'national';
+  const insightsReady =
+    insightsLevel === 'county'
+      ? schools !== undefined
+      : insightsLevel === 'state'
+      ? counties !== undefined
+      : states !== undefined;
+
+  const insightsContext = useMemo<InsightsContext>(() => {
+    const level = insightsLevel as InsightsContext['level'];
+    const label =
+      level === 'county'
+        ? `${countyNames.get(selectedCounty!) ?? selectedCounty}, ${ABBR_TO_NAME[selectedState!] ?? selectedState}`
+        : level === 'state'
+        ? ABBR_TO_NAME[selectedState!] ?? selectedState!
+        : 'United States';
+
+    let rows: Record<string, unknown>[];
+    if (level === 'county') {
+      rows = (schools ?? []).map(s => ({
+        name: s.school_name,
+        enrollment: s.enrollment ?? null,
+        math_pct_prof: s.math_pct_prof ?? null,
+        pct_high_income: s.pct_high_income ?? null,
+      }));
+    } else if (level === 'state') {
+      rows = (counties ?? []).map(c => ({
+        name: countyNames.get(c.county_fips) ?? c.county_fips,
+        school_count: c.school_count,
+        avg_math_pct_prof: c.avg_math_pct_prof,
+        avg_pct_high_income: c.avg_pct_high_income,
+        pearson_r: c.pearson_r ?? null,
+      }));
+    } else {
+      rows = (states ?? []).map(s => ({
+        name: ABBR_TO_NAME[s.state] ?? s.state,
+        school_count: s.school_count,
+        avg_math_pct_prof: s.avg_math_pct_prof,
+        avg_pct_high_income: s.avg_pct_high_income,
+        pearson_r: s.pearson_r ?? null,
+      }));
+    }
+
+    const byMath = [...scatterData].sort((a, b) => b.y - a.y);
+    const stats = {
+      row_count: rows.length,
+      paired_income_math_points: scatterData.length,
+      mean_math_pct: mean(scatterData.map(d => d.y)),
+      median_math_pct: median(scatterData.map(d => d.y)),
+      mean_high_income_pct: mean(scatterData.map(d => d.x)),
+      median_high_income_pct: median(scatterData.map(d => d.x)),
+      pearson_r_on_screen: pearsonR(scatterData),
+      pearson_r_precomputed: pearsonData?.r ?? null,
+      top_3_by_math: byMath.slice(0, 3).map(d => ({ name: d.name, math: d.y, income: d.x })),
+      bottom_3_by_math: byMath.slice(-3).reverse().map(d => ({ name: d.name, math: d.y, income: d.x })),
+    };
+
+    return { level, label, stats, rows: rows.slice(0, 400) };
+  }, [insightsLevel, selectedState, selectedCounty, schools, counties, states, countyNames, scatterData, pearsonData]);
+
   const loaded = states !== undefined;
   const count = states?.length ?? 0;
   const totalSchools = states?.reduce((sum, s) => sum + s.school_count, 0) ?? 0;
@@ -347,6 +436,11 @@ export default function Home() {
           )}
         </div>
       </div>
+
+      {/* ── AI narrative summary + open-ended Q&A over on-screen data ── */}
+      {loaded && count > 0 && (
+        <InsightsPanel context={insightsContext} ready={insightsReady} />
+      )}
 
       {/* ── Proficiency vs income brackets (100% stacked, quintile PDF-based) ── */}
       {loaded && count > 0 && (
