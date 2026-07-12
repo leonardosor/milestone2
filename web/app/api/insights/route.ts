@@ -218,9 +218,10 @@ export async function POST(req: NextRequest) {
           }
         }
       } finally {
-        controller.close();
         reader.releaseLock();
-        // Record actual spend (after the response is fully delivered)
+        // Record actual spend BEFORE closing the response stream — once the
+        // response completes, serverless runtimes may terminate the function
+        // and an in-flight mutation would be lost.
         if (convex && (inputTokens > 0 || outputTokens > 0)) {
           const costUsd =
             (inputTokens / 1_000_000) * INPUT_USD_PER_MTOK +
@@ -236,6 +237,7 @@ export async function POST(req: NextRequest) {
             console.error("usage recording failed", err);
           }
         }
+        controller.close();
       }
     },
   });
