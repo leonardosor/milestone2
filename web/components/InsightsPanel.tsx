@@ -50,6 +50,10 @@ async function streamInsights(
     signal,
   });
   if (!res.ok || !res.body) {
+    if (res.status === 503) {
+      // Service (or its usage tracking) is down — keep it friendly.
+      throw new Error('GenAI service currently offline, please check back tomorrow.');
+    }
     const detail = await res.text().catch(() => '');
     throw new Error(detail || `Request failed (${res.status})`);
   }
