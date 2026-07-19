@@ -87,44 +87,50 @@ export async function POST(req: NextRequest) {
     return new Response("Missing sessionId", { status: 400 });
   }
 
-  // ── Enforce daily budget / session caps (tracked in Convex) ──────────────
+  // ── Enforce daily budget / session caps (atomic, fail-closed) ────────────
+  // authorizeUsage is a Convex MUTATION: the limit check and session
+  // registration run in one serializable transaction, so concurrent requests
+  // cannot race past the caps.
   const convex = getConvex();
   const day = utcDay();
-  if (convex) {
-    try {
-      const usage = (await convex.query(anyApi.usage.getUsageStatus, {
-        day,
-        session_id: sessionId,
-      })) as {
-        totalCostUsd: number;
-        sessionCount: number;
-        sessionTokens: number;
-        sessionExists: boolean;
-      };
-
-      if (usage.totalCostUsd >= DAILY_BUDGET_USD) {
-        return new Response(
-          `The AI assistant's daily budget ($${DAILY_BUDGET_USD}) has been used up. It resets at midnight UTC.`,
-          { status: 429 }
-        );
-      }
-      if (usage.sessionTokens >= SESSION_TOKEN_CAP) {
-        return new Response(
+  if (!convex) {
+    // No usage tracking → no cost control → refuse to spend.
+    return new Response(
+      "AI assistant is unavailable: usage tracking is not configured.",
+      { status: 503 }
+    );
+  }
+  try {
+    const auth = (await convex.mutation(anyApi.usage.authorizeUsage, {
+      day,
+      session_id: sessionId,
+      daily_budget_usd: DAILY_BUDGET_USD,
+      session_token_cap: SESSION_TOKEN_CAP,
+      max_sessions_per_day: MAX_SESSIONS_PER_DAY,
+    })) as {
+      allowed: boolean;
+      reason?: "budget" | "session_tokens" | "max_sessions";
+    };
+    if (!auth.allowed) {
+      const messages: Record<string, string> = {
+        budget: `The AI assistant's daily budget ($${DAILY_BUDGET_USD}) has been used up. It resets at midnight UTC.`,
+        session_tokens:
           "This session has reached its AI usage limit. Refresh the page tomorrow to keep exploring.",
-          { status: 429 }
-        );
-      }
-      if (!usage.sessionExists && usage.sessionCount >= MAX_SESSIONS_PER_DAY) {
-        return new Response(
+        max_sessions:
           "Today's limit on new AI sessions has been reached. Please try again tomorrow.",
-          { status: 429 }
-        );
-      }
-    } catch (err) {
-      // Fail open: usage tracking must never take the whole feature down,
-      // but log it so a misconfigured deployment is visible.
-      console.error("usage check failed", err);
+      };
+      return new Response(
+        messages[auth.reason ?? ""] ?? "AI usage limit reached.",
+        { status: 429 }
+      );
     }
+  } catch (err) {
+    // Fail CLOSED: if the budget can't be verified, don't spend.
+    console.error("usage check failed", err);
+    return new Response(
+      "AI assistant is temporarily unavailable (usage tracking error). Please try again shortly.",
+      { status: 503 }
+    );
   }
 
   const contextJson = JSON.stringify(body.context ?? {});
