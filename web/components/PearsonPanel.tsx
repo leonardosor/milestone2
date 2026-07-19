@@ -28,6 +28,9 @@ export default function PearsonPanel({
   return (
     <div className="h-44 rounded-lg bg-[var(--surface)] border border-[var(--border)] p-4 flex flex-col justify-between">
       <div className="flex flex-col gap-0.5">
+        <span className="text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">
+          Pearson Correlation (r)
+        </span>
         {noSelection ? (
           <span className="text-sm text-[var(--muted)]">
             Select a state to see Pearson&nbsp;r
