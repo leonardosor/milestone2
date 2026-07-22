@@ -61,6 +61,51 @@ function pearsonR(pts: { x: number; y: number }[]): number | null {
   return +(sxy / Math.sqrt(sxx * syy)).toFixed(3);
 }
 
+/* ── Extra correlation panels (beyond income vs. math) ──
+ * Each metric pairs independently against math_pct_prof: a school-level field
+ * for the drilled-in scatter, and precomputed county_stats / state_stats
+ * fields (avg / pearson_r / n) for the Pearson panel, mirroring the
+ * income/math fields the export script already produces. */
+interface ExtraMetric {
+  key: string;
+  label: string;
+  xLabel: string;
+  schoolField: string; // field on a district doc
+  avgKey: string;       // field on county_stats / state_stats
+  rKey: string;
+  nKey: string;
+}
+
+const EXTRA_METRICS: ExtraMetric[] = [
+  {
+    key: 'student_teacher_ratio',
+    label: 'Student:Teacher Ratio',
+    xLabel: 'Students per Teacher',
+    schoolField: 'student_teacher_ratio',
+    avgKey: 'avg_student_teacher_ratio',
+    rKey: 'pearson_r_student_teacher_ratio',
+    nKey: 'n_student_teacher_ratio',
+  },
+  {
+    key: 'walkability',
+    label: 'Walkability',
+    xLabel: 'Walkability Index',
+    schoolField: 'avg_natwalkind',
+    avgKey: 'avg_walkability',
+    rKey: 'pearson_r_walkability',
+    nKey: 'n_walkability',
+  },
+  {
+    key: 'reading',
+    label: 'Reading Proficiency',
+    xLabel: 'Reading Prof. %',
+    schoolField: 'read_high_pct',
+    avgKey: 'avg_read_high_pct',
+    rKey: 'pearson_r_reading',
+    nKey: 'n_reading',
+  },
+];
+
 /* ── Sorting helpers ── */
 type SortDir = "asc" | "desc";
 interface SortState {
@@ -207,6 +252,59 @@ export default function Home() {
     (selectedState !== null && selectedCounty !== null && counties === undefined) ||
     (selectedState !== null && selectedCounty === null && states === undefined);
 
+  // Fixed extra scatter/Pearson panels — same drill-down logic as the
+  // income-vs-math chart above, generalized over EXTRA_METRICS.
+  const buildMetricPanel = useCallback(
+    (m: ExtraMetric) => {
+      type Row = Record<string, unknown> & { school_name: string; math_pct_prof?: number | null };
+
+      let scatter: { x: number; y: number; name: string }[] = [];
+      if (selectedState && selectedCounty) {
+        scatter = ((schools ?? []) as unknown as Row[])
+          .filter(s => s[m.schoolField] != null && s.math_pct_prof != null)
+          .map(s => ({ x: s[m.schoolField] as number, y: s.math_pct_prof as number, name: s.school_name }));
+      } else if (selectedState) {
+        scatter = ((statedistricts ?? []) as unknown as Row[])
+          .filter(s => s[m.schoolField] != null && s.math_pct_prof != null)
+          .map(s => ({ x: s[m.schoolField] as number, y: s.math_pct_prof as number, name: s.school_name }));
+      } else {
+        scatter = ((states ?? []) as unknown as (Record<string, unknown> & { state: string; avg_math_pct_prof: number })[])
+          .filter(s => s[m.avgKey] != null && s.avg_math_pct_prof != null)
+          .map(s => ({ x: s[m.avgKey] as number, y: s.avg_math_pct_prof, name: s.state }));
+      }
+
+      let pearson: { r: number | null; count?: number; label: string } | null = null;
+      if (selectedState && selectedCounty) {
+        const c = (counties ?? []).find(c => c.county_fips === selectedCounty) as unknown as Record<string, unknown> | undefined;
+        pearson = {
+          r: (c?.[m.rKey] as number | null | undefined) ?? null,
+          count: c?.[m.nKey] as number | undefined,
+          label: countyNames.get(selectedCounty) ?? selectedCounty,
+        };
+      } else if (selectedState) {
+        const s = (states ?? []).find(s => s.state === selectedState) as unknown as Record<string, unknown> | undefined;
+        pearson = {
+          r: (s?.[m.rKey] as number | null | undefined) ?? null,
+          count: s?.[m.nKey] as number | undefined,
+          label: ABBR_TO_NAME[selectedState] ?? selectedState,
+        };
+      }
+
+      const loading =
+        (selectedState !== null && selectedCounty !== null && schools === undefined) ||
+        (selectedState !== null && selectedCounty === null && statedistricts === undefined) ||
+        (selectedState === null && states === undefined);
+
+      return { scatter, pearson, loading };
+    },
+    [selectedState, selectedCounty, schools, statedistricts, states, counties, countyNames]
+  );
+
+  const extraMetricPanels = useMemo(
+    () => EXTRA_METRICS.map(m => ({ metric: m, ...buildMetricPanel(m) })),
+    [buildMetricPanel]
+  );
+
   useEffect(() => {
     if (!selectedState) return;
     setSelectedCounty(null);
@@ -349,13 +447,14 @@ export default function Home() {
       {/* ── Hero ── */}
       <section className="max-w-3xl space-y-2">
         <h1 className="text-4xl font-bold">
-          Does income predict math scores?
+          What's the relationship between high math scores and affluence?
         </h1>
         <p className="text-[var(--muted)] text-lg leading-relaxed">
-          This dashboard maps the correlation between household wealth and
+          This interactive map attemps to draw some insights about the relationship between household wealth and
           grade-8 math proficiency across {loaded ? `${totalSchools.toLocaleString()} US schools` : "US schools"}
           {" "}in {loaded ? count : '…'} states. Select a state to explore counties; select a county
-          to see individual schools.
+          to see individual schools. This is an experimental project and you are encouraged to use it with discretion as directional
+          only.
         </p>
       </section>
 
@@ -436,6 +535,36 @@ export default function Home() {
           )}
         </div>
       </div>
+
+      {/* ── Additional correlations vs math proficiency ── */}
+      {loaded && count > 0 && (
+        <section className="space-y-3">
+          <h2 className="text-xl font-semibold">Other Factors vs. Math Proficiency</h2>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            {extraMetricPanels.map(({ metric, scatter, pearson, loading }) => (
+              <div key={metric.key} className="space-y-3">
+                <h3 className="text-sm font-medium text-[var(--muted)]">
+                  {metric.label} vs. Math %
+                </h3>
+                <PearsonPanel
+                  pearsonR={pearson?.r ?? null}
+                  label={pearson?.label}
+                  schoolCount={pearson?.count}
+                  noSelection={pearson === null}
+                  loading={loading}
+                />
+                <ScatterPlot
+                  data={scatter}
+                  loading={loading}
+                  xLabel={selectedState ? metric.xLabel : `Avg ${metric.xLabel}`}
+                  yLabel={selectedState ? 'Math %' : 'Avg Math %'}
+                  onPointClick={handleScatterClick}
+                />
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* ── AI narrative summary + open-ended Q&A over on-screen data ── */}
       {loaded && count > 0 && (

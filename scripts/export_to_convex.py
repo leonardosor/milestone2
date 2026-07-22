@@ -82,6 +82,14 @@ SELECT
                                 AS pct_high_income,
     g.pct_hhi_150k_200k::float  AS pct_hhi_150k_200k,
     g.pct_hhi_220k_plus::float  AS pct_hhi_220k_plus,
+    g.teachers_fte,
+    g.grade_eight_enrollment,
+    g.math_counts,
+    g.read_counts,
+    g.read_high_pct,
+    g.avg_natwalkind,
+    g.total_10_14,
+    g.schools_in_zip,
     g.enrollment
 FROM dev.golden_table g
 LEFT JOIN dir_geo d ON d.sn = UPPER(g.school_name)
@@ -115,6 +123,58 @@ def safe_float(v):
         return float(v)
     except (TypeError, ValueError):
         return None
+
+
+def safe_int(v):
+    if v is None:
+        return None
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        try:
+            return int(float(v))
+        except Exception:
+            return None
+
+
+def student_teacher_ratio(enrollment, teachers_fte):
+    """enrollment / teachers_fte, rounded to 2dp. None if either is missing or fte is 0."""
+    e = safe_float(enrollment)
+    t = safe_float(teachers_fte)
+    if e is None or t is None or t == 0:
+        return None
+    return round(e / t, 2)
+
+
+# Extra correlations (beyond the original income-vs-math pair), each computed
+# against math_pct_prof independently — a school only needs math + this one
+# field to be included, regardless of what other fields are missing.
+#   name       — used to build the county/state bucket key
+#   district_field — key on the `district` dict holding the x-value
+#   avg_key / r_key / n_key — output field names on county_stats / state_stats
+EXTRA_METRICS = [
+    {
+        "name": "student_teacher_ratio",
+        "district_field": "student_teacher_ratio",
+        "avg_key": "avg_student_teacher_ratio",
+        "r_key":   "pearson_r_student_teacher_ratio",
+        "n_key":   "n_student_teacher_ratio",
+    },
+    {
+        "name": "walkability",
+        "district_field": "avg_natwalkind",
+        "avg_key": "avg_walkability",
+        "r_key":   "pearson_r_walkability",
+        "n_key":   "n_walkability",
+    },
+    {
+        "name": "reading",
+        "district_field": "read_high_pct",
+        "avg_key": "avg_read_high_pct",
+        "r_key":   "pearson_r_reading",
+        "n_key":   "n_reading",
+    },
+]
 
 
 def write_ndjson(path: Path, records: list):
@@ -164,6 +224,9 @@ def main():
     districts = []
     county_buckets: dict = defaultdict(lambda: {"math": [], "income": [], "state": None, "county_fips": None})
     state_buckets: dict = defaultdict(lambda: {"math": [], "income": []})
+    # One paired (x, math) bucket per extra metric, per county / state.
+    county_extra: dict = defaultdict(lambda: {m["name"]: {"x": [], "math": []} for m in EXTRA_METRICS})
+    state_extra: dict = defaultdict(lambda: {m["name"]: {"x": [], "math": []} for m in EXTRA_METRICS})
 
     geo_matched = 0
 
@@ -172,6 +235,8 @@ def main():
         county_fips = row["county_fips"]
         math_val    = safe_float(row["math_pct_prof"])
         income_val  = safe_float(row["pct_high_income"])
+        enrollment  = row["enrollment"]
+        teachers_fte = safe_float(row["teachers_fte"])
 
         if state:
             geo_matched += 1
@@ -188,7 +253,16 @@ def main():
             "pct_high_income":   income_val,
             "pct_hhi_150k_200k": safe_float(row["pct_hhi_150k_200k"]),
             "pct_hhi_220k_plus": safe_float(row["pct_hhi_220k_plus"]),
-            "enrollment":        row["enrollment"],
+            "teachers_fte":      teachers_fte,
+            "grade_eight_enrollment": safe_int(row["grade_eight_enrollment"]),
+            "math_counts":       safe_int(row["math_counts"]),
+            "read_counts":       safe_int(row["read_counts"]),
+            "read_high_pct":     safe_float(row["read_high_pct"]),
+            "avg_natwalkind":    safe_float(row["avg_natwalkind"]),
+            "total_10_14":       safe_int(row["total_10_14"]),
+            "schools_in_zip":    safe_int(row["schools_in_zip"]),
+            "enrollment":        enrollment,
+            "student_teacher_ratio": student_teacher_ratio(enrollment, teachers_fte),
         }
         districts.append(district)
 
@@ -203,33 +277,62 @@ def main():
             state_buckets[state]["math"].append(math_val)
             state_buckets[state]["income"].append(income_val)
 
+        # Extra metrics: each pairs independently with math_pct_prof.
+        if math_val is not None:
+            for m in EXTRA_METRICS:
+                x_val = district[m["district_field"]]
+                if x_val is None:
+                    continue
+                if state and county_fips:
+                    bucket = county_extra[f"{state}_{county_fips}"][m["name"]]
+                    bucket["x"].append(x_val)
+                    bucket["math"].append(math_val)
+                if state:
+                    bucket = state_extra[state][m["name"]]
+                    bucket["x"].append(x_val)
+                    bucket["math"].append(math_val)
+
     pct_geo = geo_matched / len(rows) * 100 if rows else 0
     print(f"Geography matched: {geo_matched:,} / {len(rows):,} ({pct_geo:.1f}%)")
 
     # --- Aggregate county_stats ---
     county_stats = []
-    for data in county_buckets.values():
+    for key, data in county_buckets.items():
         xs, ys = data["income"], data["math"]
-        county_stats.append({
+        rec = {
             "state":              data["state"],
             "county_fips":        data["county_fips"],
             "avg_math_pct_prof":  round(sum(ys) / len(ys), 2),
             "avg_pct_high_income": round(sum(xs) / len(xs), 2),
             "pearson_r":          pearson_r(xs, ys),
             "school_count":       len(ys),
-        })
+        }
+        for m in EXTRA_METRICS:
+            bucket = county_extra[key][m["name"]]
+            mx, my = bucket["x"], bucket["math"]
+            rec[m["avg_key"]] = round(sum(mx) / len(mx), 2) if mx else None
+            rec[m["r_key"]]   = pearson_r(mx, my)
+            rec[m["n_key"]]   = len(mx)
+        county_stats.append(rec)
 
     # --- Aggregate state_stats ---
     state_stats = []
     for state, data in state_buckets.items():
         xs, ys = data["income"], data["math"]
-        state_stats.append({
+        rec = {
             "state":              state,
             "avg_math_pct_prof":  round(sum(ys) / len(ys), 2),
             "avg_pct_high_income": round(sum(xs) / len(xs), 2),
             "pearson_r":          pearson_r(xs, ys),
             "school_count":       len(ys),
-        })
+        }
+        for m in EXTRA_METRICS:
+            bucket = state_extra[state][m["name"]]
+            mx, my = bucket["x"], bucket["math"]
+            rec[m["avg_key"]] = round(sum(mx) / len(mx), 2) if mx else None
+            rec[m["r_key"]]   = pearson_r(mx, my)
+            rec[m["n_key"]]   = len(mx)
+        state_stats.append(rec)
 
     # --- Write NDJSON ---
     print("\nWriting NDJSON…")

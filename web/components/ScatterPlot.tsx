@@ -27,15 +27,15 @@ interface ScatterPlotProps {
   onPointClick?: (name: string) => void;
 }
 
-function CustomTooltip({ active, payload }: any) {
+function CustomTooltip({ active, payload, xLabel, yLabel }: any) {
   if (!active || !payload?.length) return null;
   const d = payload[0]?.payload as DataPoint;
   if (!d) return null;
   return (
     <div className="bg-[var(--surface)] border border-[var(--border)] rounded px-2.5 py-1.5 text-sm space-y-0.5 max-w-[220px]">
       <div className="font-semibold truncate">{d.name}</div>
-      <div className="text-[var(--muted)]">Income: {d.x.toFixed(1)}%</div>
-      <div className="text-[var(--muted)]">Math: {d.y.toFixed(1)}%</div>
+      <div className="text-[var(--muted)]">{xLabel ?? 'Income %'}: {d.x.toFixed(1)}</div>
+      <div className="text-[var(--muted)]">{yLabel ?? 'Math %'}: {d.y.toFixed(1)}</div>
     </div>
   );
 }
@@ -140,7 +140,7 @@ export default function ScatterPlot({
               fontSize: 13,
             }}
           />
-          <Tooltip cursor={false} content={<CustomTooltip />} />
+          <Tooltip cursor={false} content={<CustomTooltip xLabel={xLabel} yLabel={yLabel} />} />
           {trend && (
             <ReferenceLine
               segment={trend}

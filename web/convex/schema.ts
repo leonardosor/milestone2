@@ -27,6 +27,15 @@ export default defineSchema({
     pct_hhi_150k_200k: v.optional(v.number()),
     pct_hhi_220k_plus: v.optional(v.number()),
     enrollment:        v.optional(v.number()),
+    teachers_fte:            v.optional(v.number()),
+    grade_eight_enrollment:  v.optional(v.number()),
+    math_counts:             v.optional(v.number()),
+    read_counts:             v.optional(v.number()),
+    read_high_pct:           v.optional(v.number()),
+    avg_natwalkind:          v.optional(v.number()),
+    total_10_14:             v.optional(v.number()),
+    schools_in_zip:          v.optional(v.number()),
+    student_teacher_ratio:   v.optional(v.number()),  // enrollment / teachers_fte
   })
     .index("by_state",        ["state"])
     .index("by_county_fips",  ["county_fips"])
@@ -38,8 +47,18 @@ export default defineSchema({
     county_fips:          v.string(),
     avg_math_pct_prof:    v.number(),
     avg_pct_high_income:  v.number(),
-    pearson_r:            v.optional(v.number()),  // null when school_count < 3
+    pearson_r:            v.optional(v.number()),  // null when school_count < 3 (income vs math)
     school_count:         v.number(),
+    // ── Extra correlations vs math_pct_prof (each has its own paired sample size) ──
+    avg_student_teacher_ratio:    v.optional(v.number()),
+    pearson_r_student_teacher_ratio: v.optional(v.number()),
+    n_student_teacher_ratio:      v.optional(v.number()),
+    avg_walkability:              v.optional(v.number()),  // avg_natwalkind
+    pearson_r_walkability:        v.optional(v.number()),
+    n_walkability:                v.optional(v.number()),
+    avg_read_high_pct:            v.optional(v.number()),
+    pearson_r_reading:            v.optional(v.number()),
+    n_reading:                    v.optional(v.number()),
   })
     .index("by_state",      ["state"])
     .index("by_county_fips", ["county_fips"]),
@@ -61,6 +80,16 @@ export default defineSchema({
     avg_pct_high_income:  v.number(),
     pearson_r:            v.optional(v.number()),
     school_count:         v.number(),
+    // ── Extra correlations vs math_pct_prof (each has its own paired sample size) ──
+    avg_student_teacher_ratio:    v.optional(v.number()),
+    pearson_r_student_teacher_ratio: v.optional(v.number()),
+    n_student_teacher_ratio:      v.optional(v.number()),
+    avg_walkability:              v.optional(v.number()),  // avg_natwalkind
+    pearson_r_walkability:        v.optional(v.number()),
+    n_walkability:                v.optional(v.number()),
+    avg_read_high_pct:            v.optional(v.number()),
+    pearson_r_reading:            v.optional(v.number()),
+    n_reading:                    v.optional(v.number()),
   })
     .index("by_state", ["state"]),
 });
